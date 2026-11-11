@@ -1441,11 +1441,6 @@ const App = () => {
         return str;
     };
 
-    const stripM = (val) => {
-        if (!val) return '';
-        return val.toString().replace(/[Mm]/g, '').trim();
-    };
-
     const reader = new FileReader();
     reader.onload = (evt) => {
         const bstr = evt.target.result;
@@ -1481,7 +1476,7 @@ const App = () => {
                 return (v !== undefined && v !== null) ? v.toString().trim() : '';
             };
 
-            const id = stripM(getStr(idx.id) || `imported-${Date.now()}-${rowIdx}`);
+            const id = getStr(idx.id) || `imported-${Date.now()}-${rowIdx}`;
             const name = getStr(idx.nama) || 'Unknown';
             
             const gRaw = getStr(idx.gender).toLowerCase();
@@ -1489,14 +1484,14 @@ const App = () => {
             
             const birth = normalizeDate(getVal(idx.lahir));
             const death = normalizeDate(getVal(idx.wafat));
-            const fatherId = stripM(getStr(idx.ayah));
-            const motherId = stripM(getStr(idx.ibu));
+            const fatherId = getStr(idx.ayah);
+            const motherId = getStr(idx.ibu);
 
             const spouseStr = getStr(idx.pasangan);
             const spousesArray = spouseStr ? spouseStr.split(',').map(s => {
                 const parts = s.trim().split('|');
                 return {
-                    id: stripM(parts[0]),
+                    id: parts[0].trim(),
                     type: (parts[1] || 'married').toLowerCase(),
                     marriageDate: normalizeDate(parts[2] || '')
                 };
@@ -1514,7 +1509,18 @@ const App = () => {
                 photo: ''
             };
         }).filter(m => m !== null && m.name !== 'Unknown');
-        
+
+        // Sinkronkan relasi pasangan dua arah, sama seperti normalisasi data awal,
+        // agar file yang hanya mencantumkan pasangan di satu sisi tetap terhubung
+        newData.forEach(m => {
+            m.spouses.forEach(s => {
+                const spouseRecord = newData.find(n => n.id === s.id);
+                if (spouseRecord && !spouseRecord.spouses.find(x => x.id === m.id)) {
+                    spouseRecord.spouses.push({ id: m.id, type: s.type, marriageDate: s.marriageDate || '' });
+                }
+            });
+        });
+
         if (newData.length > 0) {
             setImportPendingData(newData);
             setShowImportConfirm(true);
@@ -1529,7 +1535,9 @@ const App = () => {
         const memberMap = new Map();
         prev.forEach(m => memberMap.set(m.id.toString(), m));
         importPendingData.forEach(m => {
-            memberMap.set(m.id.toString(), m); // Overwrite existing ID with new data
+            const existing = memberMap.get(m.id.toString());
+            // Foto tidak terbawa di file Excel: pertahankan foto yang sudah ada untuk ID yang sama
+            memberMap.set(m.id.toString(), (existing && !m.photo) ? { ...m, photo: existing.photo } : m);
         });
         return Array.from(memberMap.values());
     });
@@ -1804,7 +1812,7 @@ const App = () => {
                   <div style={{ background: 'var(--bg-inset)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
                       <h3 style={{ marginBottom: '10px', fontSize: '1.1rem' }}>Import Data Keluarga (Excel .xlsx)</h3>
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
-                        Unggah file berektensi .xlsx untuk memasukkan banyak data sekaligus. Edit pasangan menggunakan format Pasangan(ID|Status|Tanggal).
+                        Unggah file berektensi .xlsx untuk memasukkan banyak data sekaligus. File hasil tombol Export ke Excel di bawah dapat diimpor kembali tanpa kehilangan relasi. Format kolom pasangan: Pasangan(ID|Status|Tanggal).
                       </p>
                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
                      <button className="btn glass" onClick={handleDownloadTemplate}>
@@ -2363,8 +2371,11 @@ const App = () => {
               <Upload size={30} />
             </div>
             <h3 style={{ marginBottom: '10px', fontSize: '1.25rem' }}>Konfirmasi Impor Data</h3>
-            <p style={{ fontSize: '0.9rem', marginBottom: '25px', opacity: 0.8, lineHeight: '1.5' }}>
+            <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
               Berhasil memproses <strong>{importPendingData.length}</strong> anggota keluarga dari file Excel. Pilih bagaimana Anda ingin memasukkan data ini:
+            </p>
+            <p style={{ fontSize: '0.8rem', marginBottom: '20px', color: 'var(--text-muted)' }}>
+              Foto tidak tersimpan di file Excel. Mode gabung mempertahankan foto yang sudah ada untuk ID yang sama; mode ganti total menghapusnya.
             </p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
