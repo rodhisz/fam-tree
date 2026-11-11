@@ -1,32 +1,83 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/*
+  Fam Tree: design token dan komponen dasar.
+  Alasan setiap keputusan ada di DESIGN.md.
+  Catatan: kelas .glass adalah nama lama, sekarang merender permukaan solid tanpa blur.
+*/
 
 :root {
-  /* Default Light Theme */
-  --bg-main: #f8fafc;
-  --bg-card: rgba(255, 255, 255, 0.8);
-  --bg-header: rgba(255, 255, 255, 0.9);
-  --border-card: rgba(0, 0, 0, 0.05);
-  --text-main: #1e293b;
-  --text-muted: #64748b;
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --male-border: #0ea5e9;
-  --female-border: #db2777;
-  --edge-color: #cbd5e1;
+  color-scheme: light;
+
+  /* Kertas arsip */
+  --bg-main: #f5f1e8;
+  --bg-card: #fdfbf6;
+  --bg-header: #f0ebdf;
+  --bg-inset: #ede7d9;
+  --border-card: #dcd3bf;
+  --text-main: #29241d;
+  --text-muted: #6d6455;
+
+  /* Satu aksen: hijau pinus */
+  --primary: #3d6b50;
+  --primary-hover: #335a46;
+  --primary-text: #3d6b50;
+  --primary-soft: rgba(61, 107, 80, 0.08);
+  --on-primary: #ffffff;
+
+  /* Warna data semantik */
+  --male: #3e6b8f;
+  --female: #a14d62;
+  --on-tint: #ffffff;
+  --ok: #3f7d4e;
+  --ok-soft: rgba(63, 125, 78, 0.1);
+  --ok-border: rgba(63, 125, 78, 0.28);
+  --danger: #a83c2a;
+  --danger-btn: #a83c2a;
+  --danger-soft: rgba(168, 60, 42, 0.08);
+  --danger-border: rgba(168, 60, 42, 0.28);
+
+  /* Diagram dan kontrol */
+  --edge: #8b7f68;
   --control-bg: #ffffff;
-  --control-icon: #1e293b;
+  --control-icon: #29241d;
+  --overlay: rgba(24, 20, 14, 0.55);
+  --shadow-modal: 0 18px 40px rgba(24, 20, 14, 0.22);
+  --shadow-float: 0 6px 16px rgba(24, 20, 14, 0.16);
 }
 
 [data-theme='dark'] {
-  --bg-main: #0f172a;
-  --bg-card: rgba(30, 41, 59, 0.7);
-  --bg-header: rgba(15, 23, 42, 0.8);
-  --border-card: rgba(255, 255, 255, 0.1);
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --edge-color: #475569;
-  --control-bg: #1e293b;
-  --control-icon: #f8fafc;
+  color-scheme: dark;
+
+  --bg-main: #211d17;
+  --bg-card: #2a251d;
+  --bg-header: #26211a;
+  --bg-inset: #1c1813;
+  --border-card: #3b352a;
+  --text-main: #ece5d8;
+  --text-muted: #a89e8b;
+
+  --primary: #40684f;
+  --primary-hover: #497759;
+  --primary-text: #9ec3ab;
+  --primary-soft: rgba(158, 195, 171, 0.1);
+  --on-primary: #f3f7f4;
+
+  --male: #8fb3d4;
+  --female: #d397a6;
+  --on-tint: #211d17;
+  --ok: #8fc79b;
+  --ok-soft: rgba(143, 199, 155, 0.12);
+  --ok-border: rgba(143, 199, 155, 0.3);
+  --danger: #e2968a;
+  --danger-btn: #a83c2a;
+  --danger-soft: rgba(226, 150, 138, 0.1);
+  --danger-border: rgba(226, 150, 138, 0.3);
+
+  --edge: #8a8070;
+  --control-bg: #1c1813;
+  --control-icon: #ece5d8;
+  --overlay: rgba(10, 8, 5, 0.62);
+  --shadow-modal: 0 18px 40px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -36,77 +87,159 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
   background-color: var(--bg-main);
   color: var(--text-main);
-  transition: background-color 0.3s, color 0.3s;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+/* Interaksi dasar: kursor, fokus, reduced motion */
+button,
+select,
+label,
+summary {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+input[type='checkbox'] {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+  border-color: var(--primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Permukaan */
 .glass {
   background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-card);
-  border-radius: 12px;
+  border-radius: 10px;
+}
+
+input.glass,
+select.glass,
+textarea.glass {
+  border-radius: 6px;
 }
 
 .btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border-card);
   cursor: pointer;
   font-weight: 500;
-  transition: all 0.2s;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   display: flex;
   align-items: center;
   gap: 8px;
   background: var(--bg-card);
   color: var(--text-main);
-  border: 1px solid var(--border-card);
+  min-height: 36px;
+}
+
+.btn:hover {
+  background: var(--bg-inset);
+}
+
+.btn:active {
+  background: var(--bg-inset);
+}
+
+.btn:disabled {
+  opacity: 0.55;
 }
 
 .btn-primary {
   background: var(--primary);
-  color: white;
-  border: none;
+  color: var(--on-primary);
+  border-color: var(--primary);
 }
 
 .btn-primary:hover {
   background: var(--primary-hover);
-  transform: translateY(-1px);
+  border-color: var(--primary-hover);
 }
 
-/* Mobile Responsiveness & Premium Polishing */
-/* Responsive Utility Classes */
-.desktop-only { display: block !important; }
-.mobile-only { display: none !important; }
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 
-.desktop-label { display: inline !important; }
-.mobile-label { display: none !important; }
+.user-badge {
+  background: var(--bg-inset);
+}
+
+/* Responsif */
+.desktop-label {
+  display: inline;
+}
+
+.mobile-label {
+  display: none;
+}
 
 @media (max-width: 768px) {
-  .desktop-only { display: none !important; }
-  .mobile-only { display: block !important; }
+  .desktop-label {
+    display: none;
+  }
 
-  .desktop-label { display: none !important; }
-  .mobile-label { display: inline !important; }
+  .mobile-label {
+    display: inline;
+  }
 
   .app-container {
     overflow-x: hidden;
   }
-  
+
   header {
     flex-direction: column !important;
     gap: 12px !important;
     margin: 10px !important;
-    padding: 15px !important;
+    padding: 14px !important;
     align-items: stretch !important;
-  }
-
-  .header-search-container {
-    order: 1;
-    margin: 0 !important;
-    max-width: none !important;
   }
 
   .nav-container {
@@ -123,17 +256,18 @@ body {
     margin: 10px 0 0 0 !important;
     width: 100%;
     justify-content: center;
-    background: rgba(0,0,0,0.03) !important;
   }
 
-  /* Compact buttons for mobile */
-  .btn-text { display: none !important; }
-  .btn { 
-    padding: 8px 10px !important;
-    min-width: 40px;
+  .btn-text {
+    display: none !important;
   }
 
-  /* Table Action Row for mobile */
+  .btn {
+    padding: 9px 11px !important;
+    min-width: 44px; /* target sentuh */
+    min-height: 44px;
+  }
+
   .table-action-row {
     flex-direction: column !important;
     align-items: center !important;
@@ -141,15 +275,13 @@ body {
   }
 
   .table-tabs-container {
-    flex-direction: row !important; /* Keep buttons in a row on mobile too */
     width: 100%;
-    display: flex !important;
     justify-content: center;
     gap: 5px;
   }
 }
 
-/* Base Modal Styles (Desktop & Mobile) */
+/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -158,31 +290,25 @@ body {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(15, 23, 42, 0.6) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  background: var(--overlay);
 }
 
 .modal-container {
-  padding: 0 !important;
-  overflow: hidden !important;
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
-  max-height: 90vh !important;
   background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-modal); /* elevasi: modal melayang di atas aplikasi */
+  max-height: 90vh;
   width: 100%;
   max-width: 700px;
-  border-radius: 16px;
-}
-
-[data-theme='dark'] .modal-container {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
 }
 
 .modal-header {
-  padding: 16px 20px !important;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border-card);
   display: flex;
   justify-content: space-between;
@@ -192,41 +318,39 @@ body {
 }
 
 .modal-body {
-  padding: 24px !important;
-  overflow-y: auto !important;
+  padding: 20px;
+  overflow-y: auto;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .modal-footer {
-  padding: 16px 20px !important;
+  padding: 14px 20px;
   border-top: 1px solid var(--border-card);
   background: var(--bg-header);
   display: flex;
-  justify-content: flex-end; /* Align to right on desktop */
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 10px;
   flex-shrink: 0;
 }
 
-/* Base Form Styling */
+/* Form */
 .form-section {
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--bg-main);
   border: 1px solid var(--border-card);
-  border-radius: 16px;
-  padding: 20px;
+  border-radius: 10px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
 .section-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -254,10 +378,9 @@ body {
 .spouse-card {
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: 14px;
   position: relative;
-  border-left: 4px solid var(--primary);
 }
 
 .spouse-card-grid {
@@ -267,7 +390,12 @@ body {
   align-items: flex-end;
 }
 
-/* Mobile Overrides */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
 @media (max-width: 768px) {
   .modal-overlay {
     padding: 0;
@@ -294,6 +422,10 @@ body {
     gap: 10px;
   }
 
+  .responsive-grid {
+    grid-template-columns: 1fr;
+  }
+
   .modal-footer {
     flex-direction: column-reverse;
   }
@@ -301,16 +433,16 @@ body {
   .modal-footer .btn {
     width: 100%;
     justify-content: center;
-    padding: 14px !important;
+    padding: 12px !important;
   }
 }
 
-/* UI Structure Helpers */
+/* Struktur tabel */
 .table-action-row {
-  display: flex !important; 
+  display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
-  gap: 15px; 
+  gap: 15px;
   margin-bottom: 20px;
 }
 
@@ -321,21 +453,25 @@ body {
   gap: 4px;
 }
 
-/* Base Utility Classes */
 .table-wrapper {
   background: var(--bg-card);
-  backdrop-filter: blur(8px);
 }
 
+tbody tr:hover {
+  background: var(--bg-inset);
+}
+
+/* Node pohon keluarga */
 .family-node {
   padding: 12px;
-  border-radius: 12px;
+  border-radius: 10px;
   width: 220px;
   height: 85px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
   overflow: visible;
 }
 
@@ -368,17 +504,50 @@ body {
   word-break: break-word;
 }
 
-
 .node-avatar {
   width: 48px;
   height: 48px;
   border-radius: 50%;
   object-fit: cover;
+  aspect-ratio: 1;
   border: 2px solid var(--border-card);
+  flex-shrink: 0;
 }
 
-.node-avatar.placeholder.male { background: linear-gradient(135deg, #0ea5e9, #38bdf8); }
-.node-avatar.placeholder.female { background: linear-gradient(135deg, #db2777, #f472b6); }
+/* Gender terbaca dari lingkar avatar, bukan strip kiri */
+.family-node.male .node-avatar {
+  border-color: var(--male);
+}
+
+.family-node.female .node-avatar {
+  border-color: var(--female);
+}
+
+.node-avatar.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-tint);
+}
+
+.node-avatar.placeholder.male {
+  background: var(--male);
+  border-color: var(--male);
+}
+
+.node-avatar.placeholder.female {
+  background: var(--female);
+  border-color: var(--female);
+}
+
+/* Almarhum/ah: redup, menandai status nyata */
+.family-node.deceased .node-avatar {
+  filter: grayscale(1);
+}
+
+.family-node.deceased .node-name {
+  color: var(--text-muted);
+}
 
 .spouse-indicators {
   position: absolute;
@@ -389,39 +558,39 @@ body {
 }
 
 .spouse-dot {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
+  background: var(--bg-card);
   border: 1px solid var(--border-card);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  color: var(--primary);
+  color: var(--primary-text);
 }
 
 .spouse-dot.divorced {
-  color: #94a3b8;
+  color: var(--text-muted);
   border-style: dashed;
 }
 
-.node-dates { font-size: 0.75rem; color: var(--text-muted); }
+.node-dates {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 
-.family-node.male { border-left: 4px solid var(--male-border); }
-.family-node.female { border-left: 4px solid var(--female-border); }
-
-/* React Flow customizations */
+/* React Flow */
 .react-flow__edge-path {
-  stroke: var(--edge-color);
-  stroke-width: 2px;
+  stroke: var(--edge);
+  stroke-width: 1.5px;
 }
 
 .react-flow__controls {
   background: var(--control-bg) !important;
   border: 1px solid var(--border-card) !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+  box-shadow: var(--shadow-float) !important; /* melayang di atas kanvas */
   border-radius: 8px !important;
+  overflow: hidden;
 }
 
 .react-flow__controls-button {
@@ -431,8 +600,8 @@ body {
 }
 
 .react-flow__controls-button:hover {
-  background: var(--primary) !important;
-  fill: white !important;
+  background: var(--bg-inset) !important;
+  fill: var(--control-icon) !important;
 }
 
 .react-flow__background {

@@ -5,7 +5,6 @@ import {
   Background,
   useNodesState,
   useEdgesState,
-  MarkerType,
   Handle,
   Position
 } from '@xyflow/react';
@@ -16,9 +15,9 @@ import FamilyMemberNode from './components/CustomNode';
 import { familyData as initialData } from './data/familyData';
 import { supabase } from './lib/supabase';
 import {
-  Plus, Users, User, Table as TableIcon, Share2, Trees,
-  Trash2, Edit2, Save, X, Camera, Heart, Baby, Sun, Moon, Search,
-  Divide, Settings, Download, Upload, LogIn, LogOut, Lock, Unlock, ShieldCheck, UserCog
+  Plus, Users, User, Table as TableIcon, Trees,
+  Trash2, Edit2, Save, X, Camera, Heart, Sun, Moon, Search,
+  Settings, Download, Upload, LogIn, LogOut, Lock, ShieldCheck, UserCog, FileSpreadsheet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -34,9 +33,9 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#ef4444', background: '#fef2f2', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <h2>Waduh, ada kesalahan sistem! 😭</h2>
-          <p>{this.state.error?.toString()}</p>
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--danger, #a83c2a)', background: 'var(--bg-main, #f5f1e8)', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '12px' }}>
+          <h2>Terjadi kesalahan pada aplikasi</h2>
+          <p style={{ color: 'var(--text-muted, #6d6455)', fontSize: '0.9rem', wordBreak: 'break-word' }}>{this.state.error?.toString()}</p>
           <button className="btn btn-primary" onClick={() => window.location.reload()} style={{ width: 'fit-content', margin: '20px auto' }}>Muat Ulang Halaman</button>
         </div>
       );
@@ -47,7 +46,7 @@ class ErrorBoundary extends React.Component {
 
 // Union Node: Titik temu Bapak & Ibu atau Titik Rujukan Orang Tua Tunggal
 const UnionNode = () => (
-  <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#94a3b8', border: '2px solid white', boxShadow: '0 0 5px rgba(0,0,0,0.2)' }}>
+  <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--edge)', border: '2px solid var(--bg-card)' }}>
     <Handle type="target" position={Position.Left} id="left" style={{ visibility: 'hidden' }} />
     <Handle type="target" position={Position.Right} id="right" style={{ visibility: 'hidden' }} />
     <Handle type="target" position={Position.Top} id="top" style={{ visibility: 'hidden' }} />
@@ -87,6 +86,14 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Tutup modal dengan Escape (aksesibilitas keyboard)
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -114,11 +121,11 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }) => {
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(10px)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '380px', padding: '30px', color: 'var(--text-main)' }}>
         <div style={{ textAlign: 'center', marginBottom: '25px' }}>
-          <div style={{ background: 'var(--primary)', color: 'white', width: '50px', height: '50px', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px' }}>
-            <Lock size={24} />
+          <div style={{ background: 'var(--primary)', color: 'var(--on-primary)', width: '50px', height: '50px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px' }}>
+            <Lock size={24} aria-hidden="true" />
           </div>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Admin Login</h2>
           <p style={{ fontSize: '0.85rem', opacity: 0.7 }}>Khusus pengelola silsilah keluarga</p>
@@ -147,13 +154,13 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }) => {
               required 
             />
           </div>
-          {error && <p style={{ color: '#ef4444', fontSize: '0.8rem', textAlign: 'center' }}>{error}</p>}
+          {error && <p style={{ color: 'var(--danger)', fontSize: '0.8rem', textAlign: 'center' }}>{error}</p>}
           <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ flex: 1, padding: '12px' }}>
               {loading ? 'Masuk...' : 'Login'}
             </button>
             <button type="button" onClick={onClose} className="btn glass" style={{ flex: 1, padding: '12px' }}>
-              Cancel
+              Batal
             </button>
           </div>
         </form>
@@ -443,6 +450,21 @@ const App = () => {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Tutup modal aktif dengan Escape (aksesibilitas keyboard)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (showCropModal) setShowCropModal(false);
+      else if (showImportConfirm) setShowImportConfirm(false);
+      else if (showResetConfirm) setShowResetConfirm(false);
+      else if (deleteTarget) setDeleteTarget(null);
+      else if (showKinshipModal) setShowKinshipModal(false);
+      else if (editingId) setEditingId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showCropModal, showImportConfirm, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
@@ -881,7 +903,7 @@ const App = () => {
               target: unionId,
               sourceHandle: 'right-source',
               targetHandle: 'left',
-              style: { stroke: '#94a3b8', strokeWidth: 2 }
+              style: { stroke: 'var(--edge)', strokeWidth: 1.5 }
             });
             // Ibu -> Union (Dari kiri)
             edges.push({
@@ -890,7 +912,7 @@ const App = () => {
               target: unionId,
               sourceHandle: 'left-source',
               targetHandle: 'right',
-              style: { stroke: '#94a3b8', strokeWidth: 2 }
+              style: { stroke: 'var(--edge)', strokeWidth: 1.5 }
             });
           }
 
@@ -901,9 +923,7 @@ const App = () => {
             target: m.id,
             sourceHandle: 'bottom',
             targetHandle: 'top',
-            animated: true,
-            style: { stroke: '#6366f1', strokeWidth: 2.5 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' }
+            style: { stroke: 'var(--edge)', strokeWidth: 1.5 }
           });
         }
       } else if (m.fatherId || m.motherId) {
@@ -917,9 +937,7 @@ const App = () => {
             target: m.id,
             sourceHandle: 'bottom',
             targetHandle: 'top',
-            animated: true,
-            style: { stroke: '#94a3b8', strokeWidth: 2.5, strokeDasharray: '4,4' },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' }
+            style: { stroke: 'var(--edge)', strokeWidth: 1.5, strokeDasharray: '4,4' }
           });
         }
       }
@@ -946,12 +964,12 @@ const App = () => {
             sourceHandle: 'right-source',
             targetHandle: 'left-target',
             style: {
-              stroke: s.type === 'divorced' ? '#94a3b8' : '#facc15',
-              strokeWidth: 3,
-              strokeDasharray: s.type === 'divorced' ? '4,4' : '0'
+              stroke: 'var(--edge)',
+              strokeWidth: 2.5,
+              strokeDasharray: s.type === 'divorced' ? '5,4' : '0'
             },
             label: s.type === 'divorced' ? 'Bercerai' : 'Menikah',
-            labelStyle: { fill: '#94a3b8', fontSize: 10 }
+            labelStyle: { fill: 'var(--text-muted)', fontSize: 10 }
           });
         }
 
@@ -993,7 +1011,7 @@ const App = () => {
                source: maleId,
                target: finalUnionId,
                sourceHandle: 'right-source', targetHandle: 'left',
-               style: { stroke: '#94a3b8', strokeWidth: 2 },
+               style: { stroke: 'var(--edge)', strokeWidth: 1.5 },
                hidden: !hasKids
             });
             edges.push({
@@ -1001,7 +1019,7 @@ const App = () => {
                source: femaleId,
                target: finalUnionId,
                sourceHandle: 'left-source', targetHandle: 'right',
-               style: { stroke: '#94a3b8', strokeWidth: 2 },
+               style: { stroke: 'var(--edge)', strokeWidth: 1.5 },
                hidden: !hasKids
             });
         }
@@ -1572,8 +1590,9 @@ const App = () => {
 
   if (loading) {
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-main)', color: 'var(--text-main)' }}>
-        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ width: '40px', height: '40px', border: '3px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'var(--bg-main)', color: 'var(--text-main)' }}>
+        <motion.div aria-hidden="true" animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ width: '36px', height: '36px', border: '3px solid var(--border-card)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Memuat data keluarga...</p>
       </div>
     );
   }
@@ -1592,10 +1611,10 @@ const App = () => {
           initial={{ opacity: 0, y: 20 }} 
           animate={{ opacity: 1, y: 0 }} 
           className="glass" 
-          style={{ maxWidth: '450px', width: '100%', padding: '40px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.1)' }}
+          style={{ maxWidth: '450px', width: '100%', padding: '40px', textAlign: 'center' }}
         >
-          <div style={{ background: 'var(--primary)', color: 'white', width: '70px', height: '70px', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px', boxShadow: '0 10px 20px rgba(99, 102, 241, 0.3)' }}>
-            <Lock size={32} />
+          <div style={{ background: 'var(--primary)', color: 'var(--on-primary)', width: '70px', height: '70px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 25px' }}>
+            <Lock size={32} aria-hidden="true" />
           </div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 800, marginBottom: '10px' }}>{appConfig.appName}</h1>
           <p style={{ opacity: 0.7, marginBottom: '30px', lineHeight: '1.6' }}>
@@ -1625,12 +1644,12 @@ const App = () => {
           {appConfig.logoMode === 'url' && appConfig.logoUrl ? (
             <img src={appConfig.logoUrl} style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} alt="Logo" />
           ) : (
-            <div className="logo glass" style={{ padding: '10px', borderRadius: '12px', background: 'var(--primary)', color: 'white' }}>
-              <Users size={24} />
+            <div className="logo">
+              <Users size={22} aria-hidden="true" />
             </div>
           )}
           <div>
-            <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>{appConfig.appName}</h1>
+            <h1 style={{ fontSize: '1.35rem', fontWeight: 600 }}>{appConfig.appName}</h1>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{appConfig.tagline}</p>
           </div>
         </div>
@@ -1638,36 +1657,35 @@ const App = () => {
         <div style={{ flex: 1 }} />
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }} className="nav-container">
-          <button className="btn glass" onClick={toggleTheme} title="Tema">
-            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          <button className="btn glass" onClick={toggleTheme} title="Tema" aria-label="Ganti tema">
+            {theme === 'light' ? <Moon size={18} aria-hidden="true" /> : <Sun size={18} aria-hidden="true" />}
           </button>
-          <div style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '10px', gap: '4px' }}>
+          <div style={{ display: 'flex', background: 'var(--bg-inset)', padding: '4px', borderRadius: '10px', gap: '4px' }}>
             <button className={`btn ${view === 'tree' ? 'btn-primary' : 'glass'}`} onClick={() => setView('tree')} style={{ padding: '8px 12px' }}>
-              <Trees size={16} /> <span className="btn-text">Pohon</span>
+              <Trees size={16} aria-hidden="true" /> <span className="btn-text">Pohon</span>
             </button>
             <button className={`btn ${view === 'table' ? 'btn-primary' : 'glass'}`} onClick={() => setView('table')} style={{ padding: '8px 12px' }}>
-              <TableIcon size={16} /> <span className="btn-text">Tabel</span>
+              <TableIcon size={16} aria-hidden="true" /> <span className="btn-text">Tabel</span>
             </button>
           </div>
-          <button className="btn glass" onClick={() => setShowKinshipModal(true)} style={{ color: 'var(--primary)' }}>
-            <Users size={18} /> <span className="btn-text">Kalkulator</span>
+          <button className="btn glass" onClick={() => setShowKinshipModal(true)} style={{ color: 'var(--primary-text)' }}>
+            <Users size={18} aria-hidden="true" /> <span className="btn-text">Kalkulator</span>
           </button>
           
           {user ? (
-            <div className="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.05)', padding: '4px 10px', borderRadius: '12px', marginLeft: '10px' }}>
+            <div className="user-badge" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-inset)', padding: '4px 10px', borderRadius: '12px', marginLeft: '10px' }}>
                 <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: '0.7rem', fontWeight: 600, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
                   <span style={{ 
-                    fontSize: '0.55rem', 
-                    fontWeight: 800,
-                    color: userRole === 'super_admin' ? '#0ea5e9' : 'var(--text-muted)',
-                    textTransform: 'uppercase',
+                    fontSize: '0.65rem', 
+                    fontWeight: 600,
+                    color: userRole === 'super_admin' ? 'var(--primary-text)' : 'var(--text-muted)',
                   }}>
-                    {user.email === 'hello@admin.com' ? 'SUPER ADMIN' : (userRole || 'PELANGGAN')}
+                    {user.email === 'hello@admin.com' ? 'Super Admin' : (userRole || 'Pengguna')}
                   </span>
                 </div>
-                <button className="btn glass" onClick={handleLogout} style={{ padding: '6px', minWidth: 'auto', border: 'none', background: 'transparent' }} title="Keluar">
-                  <LogOut size={16} style={{ color: '#ef4444' }} />
+                <button className="btn glass" onClick={handleLogout} style={{ padding: '6px', minWidth: 'auto', border: 'none', background: 'transparent' }} title="Keluar" aria-label="Keluar">
+                  <LogOut size={16} style={{ color: 'var(--danger)' }} />
                 </button>
             </div>
           ) : (
@@ -1678,9 +1696,9 @@ const App = () => {
         </div>
       </header>
       {!supabase && (
-        <div style={{ background: '#fef2f2', color: '#ef4444', padding: '10px 30px', margin: '0 20px 20px', borderRadius: '12px', border: '1px solid #fee2e2', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', zIndex: 1000, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: 'var(--danger-soft)', color: 'var(--danger)', padding: '10px 30px', margin: '0 20px 20px', borderRadius: '10px', border: '1px solid var(--danger-border)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', zIndex: 1000 }}>
           <ShieldCheck size={18} />
-          <span><strong>Koneksi Supabase Belum Aktif:</strong> Aplikasi saat ini berjalan dalam mode lokal (data tidak tersimpan di cloud). Silakan tambahkan <strong>VITE_SUPABASE_URL</strong> dan <strong>VITE_SUPABASE_ANON_KEY</strong> di dashboard Vercel Anda, lalu lakukan *redeploy*.</span>
+          <span><strong>Koneksi Supabase belum aktif:</strong> aplikasi berjalan dalam mode lokal (data tidak tersimpan di cloud). Tambahkan <strong>VITE_SUPABASE_URL</strong> dan <strong>VITE_SUPABASE_ANON_KEY</strong> di dashboard Vercel Anda, lalu redeploy.</span>
         </div>
       )}
 
@@ -1690,9 +1708,10 @@ const App = () => {
         {(userRole === 'super_admin' || userRole === 'admin') && (
           <button 
             className={`btn settings-btn ${view === 'settings' ? 'btn-primary' : 'glass'}`} 
-            style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px', zIndex: 9999, borderRadius: '50%', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} 
+            style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px', zIndex: 9999, borderRadius: '50%', boxShadow: 'var(--shadow-float)' }} 
             onClick={() => setView(view === 'settings' ? 'tree' : 'settings')} 
             title="Pengaturan"
+            aria-label="Pengaturan"
           >
             <Settings size={28} />
           </button>
@@ -1714,7 +1733,7 @@ const App = () => {
                 }}
                 fitView
               >
-                <Background color={theme === 'light' ? '#f1f5f9' : '#1e293b'} gap={25} />
+                <Background color={theme === 'light' ? '#dcd3bf' : '#3b352a'} gap={25} />
                 <Controls />
               </ReactFlow>
             </motion.div>
@@ -1723,23 +1742,23 @@ const App = () => {
                <div className="glass" style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ marginBottom: '10px' }}>Pengaturan Aplikasi</h2>
-                    <span style={{ fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.2)', color: '#0ea5e9', padding: '4px 10px', borderRadius: '20px', fontWeight: 600 }}>
+                    <span style={{ fontSize: '0.75rem', background: 'var(--primary-soft)', color: 'var(--primary-text)', padding: '4px 10px', borderRadius: '20px', fontWeight: 600 }}>
                        <ShieldCheck size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} /> {userRole === 'super_admin' ? 'Super Admin' : 'Admin'}
                     </span>
                   </div>
                   
                   <div>
-                    <label style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '8px', display: 'block' }}>Nama Aplikasi</label>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>Nama Aplikasi</label>
                     <input type="text" value={appConfig.appName} onChange={e => setAppConfig({...appConfig, appName: e.target.value})} className="glass" style={{ width: '100%', padding: '12px' }} />
                   </div>
                   
                   <div>
-                    <label style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '8px', display: 'block' }}>Tagline Slogan</label>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>Tagline Slogan</label>
                     <input type="text" value={appConfig.tagline} onChange={e => setAppConfig({...appConfig, tagline: e.target.value})} className="glass" style={{ width: '100%', padding: '12px' }} />
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '8px', display: 'block' }}>Tampilan Logo Kiri Atas</label>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>Tampilan Logo Kiri Atas</label>
                     <div style={{ display: 'flex', gap: '10px' }}>
                         <button className={`btn ${appConfig.logoMode === 'icon' ? 'btn-primary' : 'glass'}`} onClick={() => setAppConfig({...appConfig, logoMode: 'icon'})}>Ikon Bawaan</button>
                         <button className="btn glass" onClick={() => document.getElementById('logo-upload').click()}>
@@ -1756,11 +1775,11 @@ const App = () => {
 
                   <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
                   
-                  <div style={{ background: 'rgba(99, 102, 241, 0.05)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
-                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Lock size={18} /> Privasi & Keamanan Silsilah
+                  <div style={{ background: 'var(--bg-inset)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
+                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: 'var(--primary-text)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Lock size={18} /> Privasi &amp; Keamanan Silsilah
                       </h3>
-                      <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '15px' }}>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
                         Aktifkan mode privat untuk menyembunyikan silsilah keluarga dari pengunjung umum. Hanya pengguna yang login (Admin) yang dapat melihat data.
                       </p>
                       <label className="glass" style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '15px' }}>
@@ -1772,27 +1791,27 @@ const App = () => {
                         />
                         <div>
                           <span style={{ fontWeight: 700, display: 'block' }}>Mode Privat Aktif</span>
-                          <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>Hanya Admin yang dapat mengakses data silsilah</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Hanya Admin yang dapat mengakses data silsilah</span>
                         </div>
                       </label>
-                      <p style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '12px', fontWeight: 500 }}>
-                        ✓ Nama seperti "Ahmad Zaki Yasin" tidak akan terindeks oleh mesin pencari (Google).
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '12px' }}>
+                        Dalam mode privat, nama anggota keluarga tidak akan terindeks oleh mesin pencari.
                       </p>
                   </div>
 
                   <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
                   
-                  <div style={{ background: 'rgba(56, 189, 248, 0.1)', padding: '20px', borderRadius: '12px' }}>
-                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: '#0ea5e9' }}>Import Data Keluarga (Excel .xlsx)</h3>
-                      <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '15px' }}>
+                  <div style={{ background: 'var(--bg-inset)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
+                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem' }}>Import Data Keluarga (Excel .xlsx)</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
                         Unggah file berektensi .xlsx untuk memasukkan banyak data sekaligus. Edit pasangan menggunakan format Pasangan(ID|Status|Tanggal).
                       </p>
-                   <div style={{ display: 'flex', gap: '15px' }}>
-                     <button className="btn glass" onClick={handleDownloadTemplate} style={{ color: '#0ea5e9' }}>
+                   <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                     <button className="btn glass" onClick={handleDownloadTemplate}>
                        <Download size={16} /> Template Excel
                      </button>
-                     <button className="btn glass" onClick={handleExportExcel} style={{ color: '#10b981' }}>
-                       <Share2 size={16} /> Export ke Excel
+                     <button className="btn glass" onClick={handleExportExcel}>
+                       <FileSpreadsheet size={16} /> Export ke Excel
                      </button>
                      <button className="btn btn-primary" onClick={() => fileInputRef.current.click()}>
                        <Upload size={16} /> Upload Data Excel
@@ -1803,13 +1822,13 @@ const App = () => {
 
             <hr style={{ borderColor: 'var(--border-card)', margin: '20px 0' }} />
 
-                  <div style={{ background: 'rgba(239, 68, 68, 0.05)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: '#ef4444' }}>Zona Bahaya (Clear All)</h3>
-                      <p style={{ fontSize: '0.85rem', opacity: 0.8, marginBottom: '15px' }}>
-                        Hapus bersih SEPENUHNYA semua data anggota, wajah, dan kembalikan pengaturan logo ke awal. Aplikasi akan menjadi kertas putih berstatus kosong (0 Anggota). Aksi ini musnah tanpa jejak.
+                  <div style={{ background: 'var(--danger-soft)', padding: '20px', borderRadius: '10px', border: '1px solid var(--danger-border)' }}>
+                      <h3 style={{ marginBottom: '10px', fontSize: '1.1rem', color: 'var(--danger)' }}>Zona Bahaya</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
+                        Menghapus seluruh data anggota, foto, dan relasi keluarga, lalu mengembalikan pengaturan aplikasi ke kondisi awal. Data yang sudah dihapus tidak dapat dikembalikan.
                       </p>
-                      <button className="btn" style={{ background: '#ef4444', color: 'white' }} onClick={handleResetApp}>
-                        Kosongkan Total Aplikasi (Hapus Semua)
+                      <button className="btn" style={{ background: 'var(--danger-btn)', color: '#fff' }} onClick={handleResetApp}>
+                        Hapus Semua Data
                       </button>
                   </div>
 
@@ -1824,9 +1843,9 @@ const App = () => {
                       </h3>
                       <div className="glass" style={{ overflow: 'hidden', padding: '0' }}>
                         <table style={{ width: '100%', fontSize: '0.85rem' }}>
-                           <thead style={{ background: 'rgba(0,0,0,0.05)' }}>
+                           <thead style={{ background: 'var(--bg-inset)' }}>
                               <tr>
-                                <th style={{ padding: '12px', textAlign: 'left' }}>User Email</th>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>Email Pengguna</th>
                                 <th style={{ padding: '12px', textAlign: 'center' }}>Role</th>
                                 <th style={{ padding: '12px', textAlign: 'right' }}>Aksi</th>
                               </tr>
@@ -1840,8 +1859,8 @@ const App = () => {
                                       padding: '2px 8px', 
                                       borderRadius: '4px', 
                                       fontSize: '0.7rem', 
-                                      background: p.role === 'super_admin' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(168, 85, 247, 0.1)',
-                                      color: p.role === 'super_admin' ? '#0ea5e9' : '#a855f7',
+                                      background: p.role === 'super_admin' ? 'var(--primary-soft)' : 'var(--bg-inset)',
+                                      color: p.role === 'super_admin' ? 'var(--primary-text)' : 'var(--text-muted)',
                                       fontWeight: 600
                                     }}>
                                       {p.role === 'super_admin' ? 'Super Admin' : 'Editor'}
@@ -1855,8 +1874,8 @@ const App = () => {
                                       disabled={p.id === user.id}
                                       style={{ padding: '4px', fontSize: '0.75rem' }}
                                     >
-                                      <option value="editor">Set as Editor</option>
-                                      <option value="super_admin">Set as Admin</option>
+                                      <option value="editor">Jadikan Editor</option>
+                                      <option value="super_admin">Jadikan Admin</option>
                                     </select>
                                   </td>
                                 </tr>
@@ -1865,14 +1884,14 @@ const App = () => {
                         </table>
                       </div>
                        {loadingProfiles ? (
-                          <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '10px' }}>Sedang mengambil data dari Database...</p>
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '10px' }}>Sedang mengambil data pengguna...</p>
                        ) : allProfiles.length === 0 && (
-                          <p style={{ fontSize: '0.8rem', opacity: 0.5, marginTop: '10px' }}>Tabel Manajemen Pengguna tidak memiliki data. Jalankan kueri SQL untuk mendaftarkan akun Anda.</p>
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '10px' }}>Belum ada pengguna terdaftar. Tabel ini terisi setelah ada akun yang masuk melalui Supabase.</p>
                        )}
                   </div>
 
                   <div style={{ textAlign: 'right', marginTop: '10px' }}>
-                     <p style={{ fontSize: '0.75rem', opacity: 0.5 }}>Perubahan pengaturan otomatis disimpan seketika ke Database Lokal.</p>
+                     <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Perubahan pengaturan otomatis tersimpan di penyimpanan lokal.</p>
                   </div>
                </div>
             </motion.div>
@@ -1885,11 +1904,11 @@ const App = () => {
                       <input 
                         placeholder="Cari nama keluarga..." 
                         className="glass" 
-                        style={{ width: '100%', padding: '10px 15px 10px 40px', outline: 'none', borderRadius: '12px', border: '1px solid var(--border-card)' }} 
+                        style={{ width: '100%', padding: '10px 15px 10px 40px', borderRadius: '10px', border: '1px solid var(--border-card)' }} 
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
                       />
-                      <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                      <Search size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                   </div>
                 </div>
 
@@ -1900,13 +1919,13 @@ const App = () => {
                     </button>
                   )}
                   
-                  <div className="table-tabs-container" style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '4px', borderRadius: '12px', gap: '4px', width: 'fit-content' }}>
+                  <div className="table-tabs-container" style={{ display: 'flex', background: 'var(--bg-inset)', padding: '4px', borderRadius: '12px', gap: '4px', width: 'fit-content' }}>
                       <button className={`btn ${tableTab === 'members' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('members')}>Data Anggota</button>
                       <button className={`btn ${tableTab === 'birthdays' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('birthdays')}>
-                        🎂 <span className="desktop-label">Ulang Tahun</span><span className="mobile-label">Ultah</span>
+                        <span className="desktop-label">Ulang Tahun</span><span className="mobile-label">Ultah</span>
                       </button>
                       <button className={`btn ${tableTab === 'anniversaries' ? 'btn-primary' : 'glass'}`} onClick={() => setTableTab('anniversaries')}>
-                        💍 <span className="desktop-label">Anniversary</span><span className="mobile-label">Aniv</span>
+                        <span className="desktop-label">Anniversary</span><span className="mobile-label">Aniv</span>
                       </button>
                   </div>
                 </div>
@@ -1935,22 +1954,22 @@ const App = () => {
                             {m.photo ? (
                               <img src={m.photo} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                             ) : (
-                              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: m.gender === 'male' ? '#0ea5e9' : '#db2777', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
+                              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: m.gender === 'male' ? 'var(--male)' : 'var(--female)', color: 'var(--on-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
                                 <User size={18} />
                               </div>
                             )}
                             <div>
                                <div style={{ fontWeight: 600 }}>{m.name}</div>
-                               <div style={{ fontSize: '0.7rem', color: m.gender === 'male' ? 'var(--male-border)' : 'var(--female-border)' }}>{m.gender === 'male' ? 'LAKI-LAKI' : 'PEREMPUAN'}</div>
+                               <div style={{ fontSize: '0.7rem', color: m.gender === 'male' ? 'var(--male)' : 'var(--female)' }}>{m.gender === 'male' ? 'Laki-laki' : 'Perempuan'}</div>
                             </div>
                           </div>
                         </td>
                         <td style={{ padding: '12px', fontSize: '0.8rem' }}>
-                          <div>A: {familyMembers.find(f => f.id === m.fatherId)?.name || '-'}</div>
-                          <div>I: {familyMembers.find(f => f.id === m.motherId)?.name || '-'}</div>
+                          <div><span style={{ color: 'var(--text-muted)' }}>Ayah: </span>{familyMembers.find(f => f.id === m.fatherId)?.name || '-'}</div>
+                          <div><span style={{ color: 'var(--text-muted)' }}>Ibu: </span>{familyMembers.find(f => f.id === m.motherId)?.name || '-'}</div>
                         </td>
                         <td style={{ padding: '12px' }}>
-                          <span style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: m.death ? 'rgba(239, 68, 68, 0.1)' : 'rgba(34, 197, 94, 0.1)', color: m.death ? '#ef4444' : '#22c55e' }}>
+                          <span style={{ fontSize: '0.75rem', padding: '4px 8px', borderRadius: '4px', background: m.death ? 'var(--danger-soft)' : 'var(--ok-soft)', color: m.death ? 'var(--danger)' : 'var(--ok)' }}>
                             {m.death ? 'Wafat' : 'Hidup'}
                           </span>
                         </td>
@@ -1958,11 +1977,11 @@ const App = () => {
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             {user ? (
                               <>
-                                <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Edit"><Edit2 size={14} /></button>
-                                <button className="btn glass" style={{ padding: '6px', color: '#ef4444' }} onClick={() => handleDeleteData(m)} title="Hapus"><Trash2 size={14} /></button>
+                                <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Edit" aria-label={`Edit ${m.name}`}><Edit2 size={14} /></button>
+                                <button className="btn glass" style={{ padding: '6px', color: 'var(--danger)' }} onClick={() => handleDeleteData(m)} title="Hapus" aria-label={`Hapus ${m.name}`}><Trash2 size={14} /></button>
                               </>
                             ) : (
-                              <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Detail"><User size={14} /></button>
+                              <button className="btn glass" style={{ padding: '6px' }} onClick={() => handleEdit(m)} title="Detail" aria-label={`Detail ${m.name}`}><User size={14} /></button>
                             )}
                           </div>
                         </td>
@@ -1989,13 +2008,13 @@ const App = () => {
                           <td style={{ padding: '12px', fontWeight: 600 }}>{row.member.name}</td>
                           <td style={{ padding: '12px' }}>{new Date(row.member.birth).toLocaleDateString('id-ID', {day: 'numeric', month: 'long'})}</td>
                           <td style={{ padding: '12px' }}>{row.info.years} Tahun</td>
-                          <td style={{ padding: '12px', textAlign: 'right', color: row.info.daysLeft === 0 ? '#10b981' : 'inherit', fontWeight: row.info.daysLeft === 0 ? 700 : 400 }}>
-                            {row.info.daysLeft === 0 ? 'HARI INI! 🎉' : `${row.info.daysLeft} hari lagi`}
+                          <td style={{ padding: '12px', textAlign: 'right', color: row.info.daysLeft === 0 ? 'var(--ok)' : 'inherit', fontWeight: row.info.daysLeft === 0 ? 600 : 400 }}>
+                            {row.info.daysLeft === 0 ? 'Hari ini' : `${row.info.daysLeft} hari lagi`}
                           </td>
                         </tr>
                       ))}
                       {getUpcomingBirthdays().length === 0 && (
-                        <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Tidak ada data ulang tahun</td></tr>
+                        <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Belum ada anggota dengan tanggal lahir terisi. Lengkapi tanggal lahir pada data anggota agar daftar ini terisi.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -2031,13 +2050,13 @@ const App = () => {
                               </div>
                             )}
                           </td>
-                          <td style={{ padding: '12px', textAlign: 'right', color: row.info.daysLeft === 0 ? '#10b981' : 'inherit', fontWeight: row.info.daysLeft === 0 ? 700 : 400 }}>
-                            {row.info.daysLeft === 0 ? 'HARI INI! 💍' : `${row.info.daysLeft} hari lagi`}
+                          <td style={{ padding: '12px', textAlign: 'right', color: row.info.daysLeft === 0 ? 'var(--ok)' : 'inherit', fontWeight: row.info.daysLeft === 0 ? 600 : 400 }}>
+                            {row.info.daysLeft === 0 ? 'Hari ini' : `${row.info.daysLeft} hari lagi`}
                           </td>
                         </tr>
                       ))}
                       {getUpcomingAnniversaries().length === 0 && (
-                        <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', opacity: 0.6 }}>Tidak ada data anniversary pernikahan (Isi tanggal menikah terlebih dahulu)</td></tr>
+                        <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Belum ada pasangan dengan tanggal menikah terisi. Isi tanggal menikah pada data pasangan agar daftar ini terisi.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -2063,10 +2082,10 @@ const App = () => {
             className="modal-container"
           >
             <div className="modal-header">
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>
                 {user ? 'Edit Data Keluarga' : 'Detail Anggota Keluarga'}
               </h2>
-              <button className="btn glass" style={{ padding: '8px', minWidth: 'auto', borderRadius: '50%', border: 'none' }} onClick={() => setEditingId(null)}>
+              <button className="btn glass" style={{ padding: '8px', minWidth: 'auto', borderRadius: '50%', border: 'none' }} onClick={() => setEditingId(null)} aria-label="Tutup">
                 <X size={20} />
               </button>
             </div>
@@ -2079,14 +2098,14 @@ const App = () => {
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}>
                     {editBuffer.photo ? (
-                      <img src={editBuffer.photo} alt={editBuffer.name} style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                      <img src={editBuffer.photo} alt={editBuffer.name} width={100} height={100} style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-card)' }} />
                     ) : (
-                      <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: editBuffer.gender === 'male' ? 'linear-gradient(135deg, #0ea5e9, #38bdf8)' : 'linear-gradient(135deg, #db2777, #f472b6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                      <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: editBuffer.gender === 'male' ? 'var(--male)' : 'var(--female)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-tint)' }}>
                         <User size={50} />
                       </div>
                     )}
                     {user && (
-                      <label htmlFor="image-upload" style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--primary)', padding: '6px', borderRadius: '50%', cursor: 'pointer', color: 'white', border: '2px solid white', display: 'flex' }}>
+                      <label htmlFor="image-upload" style={{ position: 'absolute', bottom: 0, right: 0, background: 'var(--primary)', padding: '6px', borderRadius: '50%', cursor: 'pointer', color: 'var(--on-primary)', border: '2px solid var(--bg-card)', display: 'flex' }}>
                         <Camera size={14} />
                         <input id="image-upload" type="file" accept="image/*" hidden onChange={handleImageUpload} />
                       </label>
@@ -2127,19 +2146,19 @@ const App = () => {
               <div className="form-section">
                 <div className="section-title"><Heart size={18} /> Status Kehidupan</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <label className="glass" style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: user ? 'pointer' : 'default', padding: '12px', background: editBuffer.isDeceased ? 'rgba(239, 68, 68, 0.03)' : 'rgba(34, 197, 94, 0.03)', border: editBuffer.isDeceased ? '1px solid rgba(239, 68, 68, 0.1)' : '1px solid rgba(34, 197, 94, 0.1)' }}>
+                  <label className="glass" style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: user ? 'pointer' : 'default', padding: '12px', background: editBuffer.isDeceased ? 'var(--danger-soft)' : 'var(--ok-soft)', border: editBuffer.isDeceased ? '1px solid var(--danger-border)' : '1px solid var(--ok-border)' }}>
                     <input 
                       type="checkbox" 
                       disabled={!user}
                       checked={editBuffer.isDeceased} 
                       onChange={e => setEditBuffer({ ...editBuffer, isDeceased: e.target.checked, death: e.target.checked ? (editBuffer.death || '') : '' })}
-                      style={{ width: '20px', height: '20px', accentColor: '#ef4444' }}
+                      style={{ width: '20px', height: '20px', accentColor: 'var(--danger)' }}
                     />
                     <div>
-                      <div style={{ fontWeight: 700, color: editBuffer.isDeceased ? '#ef4444' : '#22c55e', fontSize: '0.9rem' }}>
-                        {editBuffer.isDeceased ? 'Sudah Wafat (Almarhum/ah)' : 'Masih Hidup'}
+                      <div style={{ fontWeight: 700, color: editBuffer.isDeceased ? 'var(--danger)' : 'var(--ok)', fontSize: '0.9rem' }}>
+                        {editBuffer.isDeceased ? 'Sudah Wafat (Almarhum/Almarhumah)' : 'Masih Hidup'}
                       </div>
-                      <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>Aktifkan jika anggota keluarga telah meninggal dunia</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Aktifkan jika anggota keluarga telah meninggal dunia</div>
                     </div>
                   </label>
                   
@@ -2217,8 +2236,8 @@ const App = () => {
                                   const newSpouses = editBuffer.spouses.filter((_, i) => i !== idx);
                                   setEditBuffer({ ...editBuffer, spouses: newSpouses });
                                 }} 
-                                className="btn glass"
-                                style={{ padding: '8px', color: '#ef4444', minWidth: 'auto' }}
+                                className="btn glass" aria-label="Hapus pasangan"
+                                style={{ padding: '8px', color: 'var(--danger)', minWidth: 'auto' }}
                               >
                                 <Trash2 size={16} />
                               </button>
@@ -2230,7 +2249,7 @@ const App = () => {
                       {user && (
                         <button
                           onClick={() => setEditBuffer({ ...editBuffer, spouses: [...(editBuffer.spouses || []), { id: '', type: 'married' }] })}
-                          className="btn glass" style={{ width: '100%', justifyContent: 'center', background: 'rgba(99, 102, 241, 0.03)', color: 'var(--primary)', borderStyle: 'dashed', padding: '10px' }}
+                          className="btn glass" style={{ width: '100%', justifyContent: 'center', background: 'var(--primary-soft)', color: 'var(--primary-text)', borderStyle: 'dashed', padding: '10px' }}
                         >
                           <Plus size={16} /> Tambah Pasangan
                         </button>
@@ -2282,7 +2301,7 @@ const App = () => {
       
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '400px', padding: '25px', color: 'var(--text-main)', textAlign: 'center' }}>
             <h3 style={{ marginBottom: '15px' }}>Konfirmasi Hapus</h3>
             <p style={{ fontSize: '0.85rem', marginBottom: '20px', opacity: 0.8 }}>
@@ -2298,7 +2317,7 @@ const App = () => {
             <div style={{ display: 'flex', gap: '10px' }}>
               <button 
                 className="btn glass" 
-                style={{ flex: 1, color: '#ef4444', opacity: deleteInput === deleteTarget.name ? 1 : 0.5 }} 
+                style={{ flex: 1, color: 'var(--danger)', opacity: deleteInput === deleteTarget.name ? 1 : 0.5 }} 
                 onClick={confirmDelete}
                 disabled={deleteInput !== deleteTarget.name}
               >
@@ -2314,19 +2333,19 @@ const App = () => {
 
       {/* Reset Total Confirmation Modal */}
       {showResetConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '450px', padding: '30px', color: 'var(--text-main)', textAlign: 'center', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
-            <h3 style={{ marginBottom: '15px', color: '#ef4444', fontSize: '1.4rem' }}>⚠️ APOCALYPSE WARNING</h3>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '450px', padding: '30px', color: 'var(--text-main)', textAlign: 'center', border: '1px solid var(--danger-border)' }}>
+            <h3 style={{ marginBottom: '15px', color: 'var(--danger)', fontSize: '1.4rem' }}>Hapus Semua Data</h3>
             <p style={{ fontSize: '0.9rem', marginBottom: '25px', opacity: 0.9, lineHeight: '1.5' }}>
-              Anda akan memusnahkan <strong>SELURUH</strong> data Silsilah Keluarga secara permanen tanpa tersisa. Layar akan dikembalikan ke kondisi seputih kertas baru!
+              Seluruh data anggota, foto, dan relasi keluarga akan dihapus permanen, dan pengaturan aplikasi kembali ke kondisi awal. Tindakan ini tidak dapat dibatalkan.
             </p>
-            <div style={{ display: 'flex', gap: '15px' }}>
+            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
               <button 
                 className="btn" 
-                style={{ flex: 1, background: '#ef4444', color: 'white', fontWeight: 'bold' }} 
+                style={{ flex: 1, background: 'var(--danger-btn)', color: '#fff', fontWeight: 600 }} 
                 onClick={confirmResetApp}
               >
-                YAKIN HAPUS TOTAL
+                Ya, Hapus Semua
               </button>
               <button className="btn glass" style={{ flex: 1 }} onClick={() => setShowResetConfirm(false)}>
                 Batalkan
@@ -2338,9 +2357,9 @@ const App = () => {
 
       {/* Import Confirmation Modal */}
       {showImportConfirm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '500px', padding: '30px', color: 'var(--text-main)', textAlign: 'center' }}>
-            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'var(--primary-soft)', color: 'var(--primary-text)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <Upload size={30} />
             </div>
             <h3 style={{ marginBottom: '10px', fontSize: '1.25rem' }}>Konfirmasi Impor Data</h3>
@@ -2358,7 +2377,7 @@ const App = () => {
               </button>
               <button 
                 className="btn glass" 
-                style={{ width: '100%', padding: '12px', justifyContent: 'center', color: '#ef4444' }} 
+                style={{ width: '100%', padding: '12px', justifyContent: 'center', color: 'var(--danger)' }} 
                 onClick={handleImportOverwrite}
               >
                 Ganti Total (Hapus Data Lama)
@@ -2377,11 +2396,11 @@ const App = () => {
 
       {/* Photo Crop Modal */}
       {showCropModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)' }}>
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '90%', maxWidth: '500px', height: '600px', display: 'flex', flexDirection: 'column', p: 0, overflow: 'hidden' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '90%', maxWidth: '500px', height: '600px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '20px', borderBottom: '1px solid var(--border-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0 }}>Sesuaikan Foto</h3>
-              <button onClick={() => setShowCropModal(false)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={20} /></button>
+              <button onClick={() => setShowCropModal(false)} aria-label="Tutup" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={20} /></button>
             </div>
             
             <div style={{ position: 'relative', flex: 1, background: '#000' }}>
@@ -2400,7 +2419,7 @@ const App = () => {
 
             <div style={{ padding: '25px' }}>
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '10px' }}>Zoom: {zoom.toFixed(1)}x</label>
+                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '10px' }}>Zoom: {zoom.toFixed(1)}x</label>
                 <input 
                   type="range" 
                   min={1} max={3} step={0.1} 
@@ -2424,46 +2443,46 @@ const App = () => {
 
       {/* Kinship Calculator Modal */}
       {showKinshipModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }}>
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass modal-content" style={{ width: '100%', maxWidth: '500px', padding: '30px', color: 'var(--text-main)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass" style={{ width: '100%', maxWidth: '500px', padding: '30px', color: 'var(--text-main)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
-               <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
+               <h3 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
                  <Users size={24} /> Kalkulator Hubungan Nasab
                </h3>
-               <button className="btn glass" style={{ padding: '8px' }} onClick={() => setShowKinshipModal(false)}><X size={20} /></button>
+               <button className="btn glass" style={{ padding: '8px' }} onClick={() => setShowKinshipModal(false)} aria-label="Tutup"><X size={20} /></button>
             </div>
             
-            <p style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '20px', lineHeight: '1.5' }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: '1.5' }}>
               Pilih dua anggota keluarga untuk mengetahui hubungan kekerabatan di antara mereka secara otomatis.
             </p>
 
             <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' }}>
                 <div>
-                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih &quot;Saya&quot;</label>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>Anggota pertama</label>
                     <select className="glass" value={kinshipSource} onChange={e => setKinshipSource(e.target.value)} style={{ width: '100%', padding: '12px', background: 'transparent', color: 'inherit' }}>
-                        <option value="">-- Anggota 1 --</option>
+                        <option value="">Pilih anggota pertama</option>
                         {familyMembers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                 </div>
                 <div>
-                    <label style={{ fontSize: '0.75rem', opacity: 0.6, display: 'block', marginBottom: '8px' }}>Pilih &quot;Target&quot;</label>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>Anggota kedua</label>
                     <select className="glass" value={kinshipTarget} onChange={e => setKinshipTarget(e.target.value)} style={{ width: '100%', padding: '12px', background: 'transparent', color: 'inherit' }}>
-                        <option value="">-- Anggota 2 --</option>
+                        <option value="">Pilih anggota kedua</option>
                         {familyMembers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                 </div>
             </div>
 
             {kinshipSource && kinshipTarget ? (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '25px', background: 'var(--primary)', color: 'white', borderRadius: '15px', textAlign: 'center', boxShadow: '0 8px 16px rgba(99, 102, 241, 0.2)' }}>
-                  <div style={{ fontSize: '0.85rem', opacity: 0.9, marginBottom: '5px' }}>Identifikasi Hubungan:</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '25px', background: 'var(--primary)', color: 'var(--on-primary)', borderRadius: '10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.85rem', marginBottom: '5px' }}>Hubungan kekerabatan:</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
                     {calculateRelationship(kinshipSource, kinshipTarget)}
                   </div>
               </motion.div>
             ) : (
-                <div style={{ padding: '30px', border: '2px dashed var(--border-card)', borderRadius: '15px', textAlign: 'center', opacity: 0.5 }}>
-                   Pilih kedua nama di atas untuk melihat hasilnya
+                <div style={{ padding: '30px', border: '1px dashed var(--border-card)', borderRadius: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                   Pilih dua anggota keluarga di atas untuk melihat hasil hubungan kekerabatan
                 </div>
             )}
 

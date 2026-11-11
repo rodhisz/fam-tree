@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (berisi kunci Supabase, jangan di-commit)
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
