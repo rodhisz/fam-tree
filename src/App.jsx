@@ -17,11 +17,18 @@ import { supabase } from './lib/supabase';
 import {
   Plus, Users, User, Table as TableIcon, Trees,
   Trash2, Edit2, Save, X, Camera, Heart, Sun, Moon, Search,
-  Settings, Download, Upload, LogIn, LogOut, Lock, ShieldCheck, UserCog, FileSpreadsheet
+  Settings, Download, Upload, LogIn, LogOut, Lock, ShieldCheck, UserCog, FileSpreadsheet,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import Cropper from 'react-easy-crop';
+import {
+  extractGoogleDriveId,
+  processAndDuplicatePhoto,
+  generateAvatarTiers,
+  uploadTieredPhotos
+} from './lib/imageProcessor';
 
 // Error Boundary sederhana untuk menangkap crash
 class ErrorBoundary extends React.Component {
@@ -53,26 +60,6 @@ const UnionNode = () => (
     <Handle type="source" position={Position.Bottom} id="bottom" style={{ visibility: 'hidden' }} />
   </div>
 );
-
-// Helper Potong Gambar
-const getCroppedImg = async (imageSrc, pixelCrop) => {
-  const image = await new Promise((resolve, reject) => {
-    const img = new Image();
-    img.addEventListener('load', () => resolve(img));
-    img.addEventListener('error', (error) => reject(error));
-    img.src = imageSrc;
-  });
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-  ctx.drawImage(
-    image,
-    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, pixelCrop.width, pixelCrop.height
-  );
-  return canvas.toDataURL('image/jpeg', 0.8);
-};
 
 const nodeTypes = {
   familyMember: FamilyMemberNode,
@@ -218,6 +205,12 @@ const App = () => {
   // State untuk Import Modal
   const [importPendingData, setImportPendingData] = useState([]);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [importProgress, setImportProgress] = useState({
+    active: false,
+    current: 0,
+    total: 0,
+    memberName: ''
+  });
 
   // State untuk Foto Cropper
   const [showCropModal, setShowCropModal] = useState(false);
@@ -225,6 +218,10 @@ const App = () => {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+  const [isCropping, setIsCropping] = useState(false);
+
+  // State untuk Lightbox Preview Foto Resolusi Penuh
+  const [previewPhotoMember, setPreviewPhotoMember] = useState(null);
 
   // State untuk Pencarian & Hubungan
   const [searchTerm, setSearchTerm] = useState('');
@@ -455,7 +452,8 @@ const App = () => {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      if (showCropModal) setShowCropModal(false);
+      if (previewPhotoMember) setPreviewPhotoMember(null);
+      else if (showCropModal) setShowCropModal(false);
       else if (showImportConfirm) setShowImportConfirm(false);
       else if (showResetConfirm) setShowResetConfirm(false);
       else if (deleteTarget) setDeleteTarget(null);
@@ -464,7 +462,7 @@ const App = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showCropModal, showImportConfirm, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
+  }, [previewPhotoMember, showCropModal, showImportConfirm, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
@@ -863,7 +861,10 @@ const App = () => {
     const nodes = sortedMembers.map((m) => ({
       id: m.id,
       type: 'familyMember',
-      data: { ...m },
+      data: {
+        ...m,
+        onPreviewPhoto: (member) => setPreviewPhotoMember(member)
+      },
       position: { x: 0, y: 0 },
     }));
 
@@ -1144,12 +1145,55 @@ const App = () => {
   }, []);
 
   const saveCroppedImage = async () => {
+    if (!imageToCrop || !croppedAreaPixels) return;
     try {
-      const cropped = await getCroppedImg(imageToCrop, croppedAreaPixels);
-      setEditBuffer({ ...editBuffer, photo: cropped });
+      setIsCropping(true);
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = imageToCrop;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = croppedAreaPixels.width;
+      canvas.height = croppedAreaPixels.height;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(
+        img,
+        croppedAreaPixels.x, croppedAreaPixels.y, croppedAreaPixels.width, croppedAreaPixels.height,
+        0, 0, croppedAreaPixels.width, croppedAreaPixels.height
+      );
+
+      const croppedImgElem = await new Promise((resolve) => {
+        const croppedImage = new Image();
+        croppedImage.onload = () => resolve(croppedImage);
+        croppedImage.src = canvas.toDataURL('image/png');
+      });
+
+      const { hdBlob, thumbBlob } = await generateAvatarTiers(croppedImgElem);
+      const uploaded = await uploadTieredPhotos({
+        memberId: editBuffer.id,
+        hdBlob,
+        thumbBlob,
+        supabaseClient: supabase
+      });
+
+      setEditBuffer(prev => ({
+        ...prev,
+        photo: uploaded.photo,
+        thumbnail: uploaded.thumbnail
+      }));
+
       setShowCropModal(false);
       setImageToCrop(null);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error('Gagal memproses foto:', e);
+    } finally {
+      setIsCropping(false);
+    }
   };
 
   const handleDeleteData = (member) => {
@@ -1262,7 +1306,8 @@ const App = () => {
         'Wafat(YYYY-MM-DD)': m.death || '',
         ID_Ayah: m.fatherId || '',
         ID_Ibu: m.motherId || '',
-        'Pasangan(ID|Status|Tanggal)': m.spouses?.map(s => `${s.id}|${s.type}|${s.marriageDate || ''}`).join(', ') || ''
+        'Pasangan(ID|Status|Tanggal)': m.spouses?.map(s => `${s.id}|${s.type}|${s.marriageDate || ''}`).join(', ') || '',
+        'Foto(URL_Drive)': m.driveSourceUrl || (m.photo?.startsWith('http') ? m.photo : '')
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -1371,7 +1416,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': '2|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '2|married|1998-05-20',
+            'Foto(URL_Drive)': 'https://drive.google.com/file/d/contoh_id_foto_budi/view'
         },
         {
             ID: '2',
@@ -1381,7 +1427,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': '1|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '1|married|1998-05-20',
+            'Foto(URL_Drive)': ''
         },
         {
             ID: '3',
@@ -1391,7 +1438,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '1',
             ID_Ibu: '2',
-            'Pasangan(ID|Status|Tanggal)': ''
+            'Pasangan(ID|Status|Tanggal)': '',
+            'Foto(URL_Drive)': ''
         }
     ];
     const ws = XLSX.utils.json_to_sheet(data);
@@ -1464,7 +1512,8 @@ const App = () => {
             wafat: headers.findIndex(h => h.includes('wafat') || h === 'death'),
             ayah: headers.findIndex(h => h.includes('ayah') || h === 'father'),
             ibu: headers.findIndex(h => h.includes('ibu') || h === 'mother'),
-            pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse')
+            pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse'),
+            foto: headers.findIndex(h => h.includes('foto') || h.includes('photo') || h.includes('gambar') || h.includes('drive'))
         };
 
         const newData = dataRows.map((row, rowIdx) => {
@@ -1497,6 +1546,8 @@ const App = () => {
                 };
             }).filter(s => s.id) : [];
 
+            const photoRaw = getStr(idx.foto);
+
             return {
                 id,
                 name,
@@ -1506,7 +1557,9 @@ const App = () => {
                 fatherId,
                 motherId,
                 spouses: spousesArray,
-                photo: ''
+                photo: photoRaw,
+                thumbnail: '',
+                driveSourceUrl: photoRaw
             };
         }).filter(m => m !== null && m.name !== 'Unknown');
 
@@ -1530,26 +1583,83 @@ const App = () => {
     e.target.value = null; // reset
   };
 
-  const handleImportMerge = () => {
-    setFamilyMembers(prev => {
+  const executeImport = async (mode) => {
+    setShowImportConfirm(false);
+
+    // Filter baris yang membawa link foto eksternal atau Google Drive
+    const candidates = importPendingData.filter(m =>
+      m.photo && (m.photo.startsWith('http://') || m.photo.startsWith('https://') || extractGoogleDriveId(m.photo))
+    );
+
+    let processed = [...importPendingData];
+
+    if (candidates.length > 0) {
+      setImportProgress({
+        active: true,
+        current: 0,
+        total: candidates.length,
+        memberName: candidates[0].name
+      });
+
+      for (let i = 0; i < candidates.length; i++) {
+        const item = candidates[i];
+        setImportProgress({
+          active: true,
+          current: i + 1,
+          total: candidates.length,
+          memberName: item.name
+        });
+
+        try {
+          const res = await processAndDuplicatePhoto({
+            url: item.photo,
+            memberId: item.id,
+            supabaseClient: supabase
+          });
+
+          if (res) {
+            processed = processed.map(m => (m.id === item.id ? {
+              ...m,
+              photo: res.photo,
+              thumbnail: res.thumbnail,
+              driveSourceUrl: res.driveSourceUrl
+            } : m));
+          }
+        } catch (err) {
+          console.warn(`Gagal memproses foto ${item.name}:`, err);
+        }
+      }
+
+      setImportProgress({ active: false, current: 0, total: 0, memberName: '' });
+    }
+
+    if (mode === 'merge') {
+      setFamilyMembers(prev => {
         const memberMap = new Map();
         prev.forEach(m => memberMap.set(m.id.toString(), m));
-        importPendingData.forEach(m => {
-            const existing = memberMap.get(m.id.toString());
-            // Foto tidak terbawa di file Excel: pertahankan foto yang sudah ada untuk ID yang sama
-            memberMap.set(m.id.toString(), (existing && !m.photo) ? { ...m, photo: existing.photo } : m);
+        processed.forEach(m => {
+          const existing = memberMap.get(m.id.toString());
+          const finalPhoto = m.photo || existing?.photo || '';
+          const finalThumb = m.thumbnail || existing?.thumbnail || '';
+          const finalDrive = m.driveSourceUrl || existing?.driveSourceUrl || '';
+          memberMap.set(m.id.toString(), {
+            ...m,
+            photo: finalPhoto,
+            thumbnail: finalThumb,
+            driveSourceUrl: finalDrive
+          });
         });
         return Array.from(memberMap.values());
-    });
-    setShowImportConfirm(false);
+      });
+    } else {
+      setFamilyMembers(processed);
+    }
+
     setImportPendingData([]);
   };
 
-  const handleImportOverwrite = () => {
-    setFamilyMembers(importPendingData);
-    setShowImportConfirm(false);
-    setImportPendingData([]);
-  };
+  const handleImportMerge = () => executeImport('merge');
+  const handleImportOverwrite = () => executeImport('overwrite');
 
   const handleAppLogoUpload = (e) => {
     const file = e.target.files[0];
@@ -1960,7 +2070,15 @@ const App = () => {
                           <td style={{ padding: '12px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             {m.photo ? (
-                              <img src={m.photo} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                              <button
+                                type="button"
+                                className="node-avatar-btn"
+                                onClick={() => setPreviewPhotoMember(m)}
+                                title={`Lihat foto ${m.name}`}
+                                aria-label={`Lihat foto ${m.name}`}
+                              >
+                                <img src={m.thumbnail || m.photo} alt={m.name} style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                              </button>
                             ) : (
                               <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: m.gender === 'male' ? 'var(--male)' : 'var(--female)', color: 'var(--on-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
                                 <User size={18} />
@@ -2106,7 +2224,15 @@ const App = () => {
                 <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}>
                     {editBuffer.photo ? (
-                      <img src={editBuffer.photo} alt={editBuffer.name} width={100} height={100} style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-card)' }} />
+                      <button
+                        type="button"
+                        className="node-avatar-btn"
+                        onClick={() => setPreviewPhotoMember(editBuffer)}
+                        title="Klik untuk melihat foto resolusi penuh"
+                        aria-label={`Lihat foto ${editBuffer.name}`}
+                      >
+                        <img src={editBuffer.thumbnail || editBuffer.photo} alt={editBuffer.name} width={100} height={100} style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border-card)' }} />
+                      </button>
                     ) : (
                       <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: editBuffer.gender === 'male' ? 'var(--male)' : 'var(--female)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--on-tint)' }}>
                         <User size={50} />
@@ -2374,9 +2500,15 @@ const App = () => {
             <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
               Berhasil memproses <strong>{importPendingData.length}</strong> anggota keluarga dari file Excel. Pilih bagaimana Anda ingin memasukkan data ini:
             </p>
-            <p style={{ fontSize: '0.8rem', marginBottom: '20px', color: 'var(--text-muted)' }}>
-              Foto tidak tersimpan di file Excel. Mode gabung mempertahankan foto yang sudah ada untuk ID yang sama; mode ganti total menghapusnya.
-            </p>
+            {importPendingData.filter(m => m.photo && (m.photo.startsWith('http') || extractGoogleDriveId(m.photo))).length > 0 ? (
+              <p style={{ fontSize: '0.85rem', marginBottom: '20px', color: 'var(--primary)', fontWeight: 600 }}>
+                Ditemukan {importPendingData.filter(m => m.photo && (m.photo.startsWith('http') || extractGoogleDriveId(m.photo))).length} foto (Google Drive/URL) yang akan diduplikasi & dioptimasi (WebP 2-tier).
+              </p>
+            ) : (
+              <p style={{ fontSize: '0.8rem', marginBottom: '20px', color: 'var(--text-muted)' }}>
+                File tidak mencantumkan link foto baru. Mode gabung mempertahankan foto yang sudah ada untuk ID yang sama; mode ganti total menghapusnya.
+              </p>
+            )}
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button 
@@ -2440,10 +2572,10 @@ const App = () => {
                 />
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <button className="btn btn-primary" style={{ flex: 1, padding: '12px', justifyContent: 'center' }} onClick={saveCroppedImage}>
-                  Pasang Foto
+                <button className="btn btn-primary" style={{ flex: 1, padding: '12px', justifyContent: 'center' }} onClick={saveCroppedImage} disabled={isCropping}>
+                  {isCropping ? 'Menyimpan...' : 'Pasang Foto'}
                 </button>
-                <button className="btn glass" style={{ flex: 1, padding: '12px', justifyContent: 'center' }} onClick={() => setShowCropModal(false)}>
+                <button className="btn glass" style={{ flex: 1, padding: '12px', justifyContent: 'center' }} onClick={() => setShowCropModal(false)} disabled={isCropping}>
                   Batal
                 </button>
               </div>
@@ -2501,6 +2633,88 @@ const App = () => {
               Tutup Kalkulator
             </button>
           </motion.div>
+        </div>
+      )}
+
+      {/* Modal Progress Duplikasi Foto */}
+      {importProgress.active && (
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 2500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass" style={{ width: '100%', maxWidth: '420px', padding: '24px', textAlign: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: '14px', boxShadow: 'var(--shadow-modal)' }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: '1.15rem' }}>Menduplikasi Foto</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.4 }}>
+              Memproses foto {importProgress.current} dari {importProgress.total} <br />
+              <strong>{importProgress.memberName}</strong>
+            </p>
+            <div style={{ width: '100%', height: '8px', background: 'var(--bg-inset)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-card)' }}>
+              <div 
+                style={{ 
+                  height: '100%', 
+                  width: `${Math.round((importProgress.current / Math.max(importProgress.total, 1)) * 100)}%`, 
+                  background: 'var(--primary)',
+                  transition: 'width 0.2s ease'
+                }} 
+              />
+            </div>
+            <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Mengompresi WebP 2-tier (Thumbnail & HD)...
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Preview Foto Resolusi Tinggi */}
+      {previewPhotoMember && (
+        <div 
+          className="photo-lightbox-overlay" 
+          onClick={() => setPreviewPhotoMember(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Foto ${previewPhotoMember.name}`}
+        >
+          <div 
+            className="photo-lightbox-dialog" 
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="photo-lightbox-header">
+              <div className="photo-lightbox-meta">
+                <span className="photo-lightbox-title">{previewPhotoMember.name}</span>
+                <span className="photo-lightbox-subtitle">
+                  {previewPhotoMember.birth ? new Date(previewPhotoMember.birth).getFullYear() : '?'}
+                  {previewPhotoMember.death ? ` - ${new Date(previewPhotoMember.death).getFullYear()}` : ''}
+                </span>
+              </div>
+              <div className="photo-lightbox-actions">
+                {previewPhotoMember.driveSourceUrl && (
+                  <a 
+                    href={previewPhotoMember.driveSourceUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="btn glass"
+                    style={{ fontSize: '0.8rem', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Buka file asli di Google Drive"
+                  >
+                    <ExternalLink size={14} /> Drive Asli
+                  </a>
+                )}
+                <button 
+                  type="button" 
+                  className="btn glass" 
+                  onClick={() => setPreviewPhotoMember(null)}
+                  aria-label="Tutup preview foto"
+                  style={{ padding: '6px 10px' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="photo-lightbox-content">
+              <img 
+                src={previewPhotoMember.photo || previewPhotoMember.thumbnail} 
+                alt={previewPhotoMember.name}
+                className="photo-lightbox-img" 
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

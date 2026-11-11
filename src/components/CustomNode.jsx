@@ -2,10 +2,26 @@ import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { Heart, User } from 'lucide-react';
 
-// Avatar anggota keluarga: foto asli, atau inisial warna gender tanpa gradien.
+// Avatar anggota keluarga: thumbnail ringan untuk pohon, foto asli fallback.
 const Avatar = ({ data }) => {
-    if (data.photo && !data.photo.includes('unsplash.com')) {
-        return <img src={data.photo} alt={data.name} className="node-avatar" width={48} height={48} />;
+    const photoSrc = data.thumbnail || data.photo;
+    const hasPhoto = photoSrc && !photoSrc.includes('unsplash.com');
+
+    if (hasPhoto) {
+        return (
+            <button
+                type="button"
+                className="node-avatar-btn"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (data.onPreviewPhoto) data.onPreviewPhoto(data);
+                }}
+                title={data.photo ? `Lihat foto ${data.name}` : data.name}
+                aria-label={`Lihat foto ${data.name}`}
+            >
+                <img src={photoSrc} alt={data.name} className="node-avatar" width={48} height={48} loading="lazy" />
+            </button>
+        );
     }
 
     return (
