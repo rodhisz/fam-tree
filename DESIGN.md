@@ -64,6 +64,17 @@ Satu aksen: hijau pinus hanya di momen kunci (tombol utama, hasil kalkulator nas
 - Hidup / Wafat: chip status kecil.
 - Merah hanya untuk bahaya (hapus, reset total). Tidak ada merah dekoratif.
 
+## Pipeline foto import Excel (hemat storage)
+
+Foto orang dipakai sebagai avatar kecil, jadi tidak perlu resolusi penuh dari kamera HP (bisa 3-8 MB per file). Alasan setiap tahap:
+
+- **Sumber:** kolom `Foto` di file Excel berisi link per orang, termasuk link berbagi Google Drive. Link Drive dikonversi ke URL unduhan langsung (`uc?export=download&id=...`).
+- **Proxy:** browser sering diblokir CORS saat mengambil gambar dari Drive, jadi ada edge function Supabase (`supabase/functions/fetch-photo`) dengan allowlist host Google, validasi `image/*`, cap 20 MB, dan timeout 15 detik. Alasan: fungsi ini bukan proxy terbuka.
+- **Kompresi:** sisi panjang maksimal 512px (avatar ditampilkan maksimal 100px, 512px cukup untuk layar retina), format WebP kualitas 0.82 dengan fallback JPEG. Alasan: 100 anggota jadi kisaran kilobyte, bukan ratusan MB.
+- **Penyimpanan:** bucket Supabase Storage `photos`, path per anggota `members/{id}.{webp|jpg}`, dengan `upsert`. Alasan: path per anggota berarti re-import atau ganti foto menimpa file yang sama, storage tidak membengkak.
+- **Konsekuensi:** foto hidup di server aplikasi sendiri; tautan atau file di Drive yang hilang tidak mempengaruhi pohon keluarga.
+- **Mode lokal (tanpa Supabase):** hasil kompresi disimpan sebagai data URL di data anggota; fetch dari Drive bisa gagal karena CORS dan dicatat di ringkasan gagal.
+
 ## Yang dihapus dari versi lama, beserta alasan
 
 - Blur di semua permukaan, glow tombol, bayangan di setiap kartu. Alasan: pelanggaran dosis R-10/R-12/R-13.
