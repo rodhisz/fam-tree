@@ -66,14 +66,15 @@ Satu aksen: hijau pinus hanya di momen kunci (tombol utama, hasil kalkulator nas
 
 ## Pipeline foto import Excel (hemat storage)
 
-Foto orang dipakai sebagai avatar kecil, jadi tidak perlu resolusi penuh dari kamera HP (bisa 3-8 MB per file). Alasan setiap tahap:
+Foto orang dipakai sebagai avatar kecil di pohon dan bisa dibuka penuh di lightbox, jadi ada dua kualitas yang disiapkan dari satu unduhan. Alasan setiap tahap:
 
-- **Sumber:** kolom `Foto` di file Excel berisi link per orang, termasuk link berbagi Google Drive. Link Drive dikonversi ke URL unduhan langsung (`uc?export=download&id=...`).
-- **Proxy:** browser sering diblokir CORS saat mengambil gambar dari Drive, jadi ada edge function Supabase (`supabase/functions/fetch-photo`) dengan allowlist host Google, validasi `image/*`, cap 20 MB, dan timeout 15 detik. Alasan: fungsi ini bukan proxy terbuka.
-- **Kompresi:** sisi panjang maksimal 512px (avatar ditampilkan maksimal 100px, 512px cukup untuk layar retina), format WebP kualitas 0.82 dengan fallback JPEG. Alasan: 100 anggota jadi kisaran kilobyte, bukan ratusan MB.
-- **Penyimpanan:** bucket Supabase Storage `photos`, path per anggota `members/{id}.{webp|jpg}`, dengan `upsert`. Alasan: path per anggota berarti re-import atau ganti foto menimpa file yang sama, storage tidak membengkak.
+- **Sumber:** kolom `Foto(URL_Drive)` di file Excel berisi link per orang, termasuk link berbagi Google Drive. Link Drive dikonversi ke endpoint streaming `lh3.googleusercontent.com/d/<id>`.
+- **Fallback proxy:** bila load langsung diblokir CORS atau timeout, foto diambil lewat edge function Supabase (`supabase/functions/fetch-photo`) dengan allowlist host Google, validasi `image/*`, cap 20 MB, dan timeout 15 detik. Alasan: fungsi ini bukan proxy terbuka.
+- **Kompresi 2-tier:** tier HD maksimal 1400px kualitas 0.82 untuk lightbox jernih, tier thumbnail square 300px kualitas 0.78 (center crop) untuk avatar pohon. Format WebP dengan fallback JPEG. Alasan: avatar kecil tidak butuh file kamera 3-8 MB; 100 anggota tetap ringan.
+- **Penyimpanan:** bucket Supabase Storage `family-photos`, path per anggota `members/{id}_full.webp` dan `members/{id}_thumb.webp`, dengan `upsert`. Alasan: path per anggota berarti re-import atau ganti foto menimpa berkas yang sama, storage tidak membengkak.
 - **Konsekuensi:** foto hidup di server aplikasi sendiri; tautan atau file di Drive yang hilang tidak mempengaruhi pohon keluarga.
-- **Mode lokal (tanpa Supabase):** hasil kompresi disimpan sebagai data URL di data anggota; fetch dari Drive bisa gagal karena CORS dan dicatat di ringkasan gagal.
+- **Kegagalan:** foto yang tidak bisa diambil tidak membatalkan datanya; anggota tetap masuk dan daftar kegagalannya ditampilkan di ringkasan akhir (mode gabung memakai foto lama, mode ganti total membiarkan kosong).
+- **Mode lokal (tanpa Supabase):** hasil kompresi disimpan sebagai data URL di data anggota.
 
 ## Yang dihapus dari versi lama, beserta alasan
 

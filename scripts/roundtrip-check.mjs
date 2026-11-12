@@ -1,13 +1,13 @@
 /**
  * Cek bolak-balik (round-trip) Export Excel -> Import Excel,
- * termasuk pipeline foto dari kolom Foto (link Google Drive).
+ * termasuk kolom Foto(URL_Drive) untuk duplikasi foto Google Drive.
  * Mereplikasi persis logika handleExportExcel dan handleFileUpload di src/App.jsx.
  * Jalankan: npm run test:roundtrip
  */
 import { createRequire } from 'module';
 import { writeFileSync } from 'fs';
 import { familyData } from '../src/data/familyData.js';
-import { driveToDirectUrl } from '../src/lib/photo.js';
+import { extractGoogleDriveId, resolveImageUrl } from '../src/lib/imageProcessor.js';
 
 const require = createRequire(import.meta.url);
 const XLSX = require('xlsx');
@@ -64,7 +64,7 @@ const parseWorkbook = (bstr) => {
     ayah: headers.findIndex(h => h.includes('ayah') || h === 'father'),
     ibu: headers.findIndex(h => h.includes('ibu') || h === 'mother'),
     pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse'),
-    foto: headers.findIndex(h => h.includes('foto') || h.includes('photo'))
+    foto: headers.findIndex(h => h.includes('foto') || h.includes('photo') || h.includes('gambar') || h.includes('drive'))
   };
 
   const newData = dataRows.map((row, rowIdx) => {
@@ -87,7 +87,7 @@ const parseWorkbook = (bstr) => {
         marriageDate: normalizeDate(parts[2] || '')
       };
     }).filter(s => s.id) : [];
-    const fotoRaw = getStr(idx.foto);
+    const photoRaw = getStr(idx.foto);
     return {
       id,
       name,
@@ -97,8 +97,9 @@ const parseWorkbook = (bstr) => {
       fatherId: getStr(idx.ayah),
       motherId: getStr(idx.ibu),
       spouses: spousesArray,
-      photo: '',
-      photoUrl: /^https?:\/\//i.test(fotoRaw) ? fotoRaw : ''
+      photo: photoRaw,
+      thumbnail: '',
+      driveSourceUrl: photoRaw
     };
   }).filter(m => m !== null && m.name !== 'Unknown');
 
@@ -124,31 +125,49 @@ const toSheetRows = (members) => members.map(m => ({
   ID_Ayah: m.fatherId || '',
   ID_Ibu: m.motherId || '',
   'Pasangan(ID|Status|Tanggal)': m.spouses?.map(s => `${s.id}|${s.type}|${s.marriageDate || ''}`).join(', ') || '',
-  Foto: (typeof m.photo === 'string' && /^https?:\/\//i.test(m.photo)) ? m.photo : ''
+  'Foto(URL_Drive)': m.driveSourceUrl || (m.photo?.startsWith('http') ? m.photo : '')
 }));
 
 const spouseSignature = (spouses) =>
   (spouses || []).map(s => `${s.id}:${s.type}:${s.marriageDate || ''}`).sort().join(';');
 
-// ---------- 0. Unit test konversi link Google Drive ----------
-const driveCases = [
-  ['https://drive.google.com/file/d/1a2B_cD-ef9/view?usp=sharing', 'https://drive.google.com/uc?export=download&id=1a2B_cD-ef9'],
-  ['https://drive.google.com/file/d/XYZ123/edit', 'https://drive.google.com/uc?export=download&id=XYZ123'],
-  ['https://drive.google.com/open?id=Xy9_zW8', 'https://drive.google.com/uc?export=download&id=Xy9_zW8'],
-  ['https://drive.google.com/uc?export=download&id=AbC123', 'https://drive.google.com/uc?export=download&id=AbC123'],
+// ---------- 0. Unit test ekstraksi & konversi link Google Drive ----------
+const idCases = [
+  ['https://drive.google.com/file/d/1a2B_cD-ef9/view?usp=sharing', '1a2B_cD-ef9'],
+  ['https://drive.google.com/file/d/XYZ123/edit', 'XYZ123'],
+  ['https://drive.google.com/open?id=Xy9_zW8', 'Xy9_zW8'],
+  ['https://drive.google.com/uc?id=AbC123', 'AbC123'],
+  ['https://lh3.googleusercontent.com/d/QwErTy12', 'QwErTy12'],
+  ['https://contoh.com/foto.jpg', null],
+  ['', null]
+];
+let idOk = true;
+const idDetail = [];
+for (const [input, expected] of idCases) {
+  const got = extractGoogleDriveId(input);
+  if (got !== expected) {
+    idOk = false;
+    idDetail.push(`"${input}" -> ${got} (diharapkan ${expected})`);
+  }
+}
+check('extractGoogleDriveId membaca semua varian link Drive', idOk, idDetail.join('; '));
+
+const resolveCases = [
+  ['https://drive.google.com/file/d/1a2B_cD-ef9/view', 'https://lh3.googleusercontent.com/d/1a2B_cD-ef9'],
+  ['https://drive.google.com/open?id=Xy9_zW8', 'https://lh3.googleusercontent.com/d/Xy9_zW8'],
   ['https://contoh.com/foto.jpg', 'https://contoh.com/foto.jpg'],
   ['', '']
 ];
-let driveOk = true;
-const driveDetail = [];
-for (const [input, expected] of driveCases) {
-  const got = driveToDirectUrl(input);
+let resolveOk = true;
+const resolveDetail = [];
+for (const [input, expected] of resolveCases) {
+  const got = resolveImageUrl(input);
   if (got !== expected) {
-    driveOk = false;
-    driveDetail.push(`"${input}" -> "${got}" (diharapkan "${expected}")`);
+    resolveOk = false;
+    resolveDetail.push(`"${input}" -> "${got}" (diharapkan "${expected}")`);
   }
 }
-check('driveToDirectUrl mengonversi semua varian link Drive', driveOk, driveDetail.join('; '));
+check('resolveImageUrl mengubah link Drive ke endpoint streaming', resolveOk, resolveDetail.join('; '));
 
 // ---------- Skenario: data seed + anggota tambahan ala handleAdd + foto ----------
 const appState = [
@@ -162,7 +181,9 @@ const appState = [
     fatherId: 'h1',
     motherId: 'w1',
     spouses: [],
-    photo: 'https://contoh.com/foto-lama.jpg'
+    photo: 'https://supabase.app/storage/v1/object/public/family-photos/members/m1762848000000_full.webp',
+    thumbnail: 'https://supabase.app/storage/v1/object/public/family-photos/members/m1762848000000_thumb.webp',
+    driveSourceUrl: 'https://drive.google.com/file/d/1a2B_cD-ef9/view'
   },
   {
     id: 'm1762848000001',
@@ -173,7 +194,9 @@ const appState = [
     fatherId: '',
     motherId: '',
     spouses: [{ id: 'm1762848000000', type: 'divorced', marriageDate: '2015-06-06' }],
-    photo: 'data:image/png;base64,CONTOH'
+    photo: 'data:image/webp;base64,CONTOH',
+    thumbnail: 'data:image/webp;base64,THUMB',
+    driveSourceUrl: ''
   }
 ];
 appState.find(m => m.id === 'm1762848000000').spouses.push({ id: 'm1762848000001', type: 'divorced', marriageDate: '2015-06-06' });
@@ -188,82 +211,109 @@ const imported = parseWorkbook(bstr);
 check('Jumlah anggota utuh setelah impor', imported.length === appState.length, `${imported.length} / ${appState.length}`);
 
 const byId = new Map(imported.map(m => [m.id, m]));
+let mismatches = 0;
+for (const orig of appState) {
+  const back = byId.get(orig.id);
+  if (!back) { mismatches++; continue; }
+  const sig = (m) => `id=${m.id} nama=${m.name} gender=${m.gender} lahir=${m.birth || ''} wafat=${m.death || ''} ayah=${m.fatherId || ''} ibu=${m.motherId || ''} pasangan=[${spouseSignature(m.spouses)}]`;
+  if (sig(orig) !== sig(back)) {
+    mismatches++;
+    console.log(`      beda: ${orig.id}\n        asli: ${sig(orig)}\n        hasil: ${sig(back)}`);
+  }
+}
+check('Semua field + relasi identik (ID, tanggal, ortu, pasangan)', mismatches === 0, `${mismatches} anggota berbeda`);
 
-// Presedensi kolom Foto: URL http(s) ikut, data URL tidak (tidak muat di sel)
-check('Kolom Foto membawa URL http(s) hasil export',
-  byId.get('m1762848000000')?.photoUrl === 'https://contoh.com/foto-lama.jpg');
+check('Kolom Foto(URL_Drive) membawa tautan Drive anggota',
+  byId.get('m1762848000000')?.photo === 'https://drive.google.com/file/d/1a2B_cD-ef9/view' &&
+  byId.get('m1762848000000')?.driveSourceUrl === 'https://drive.google.com/file/d/1a2B_cD-ef9/view');
 check('Data URL foto (hasil crop) tidak dimasukkan ke Excel',
-  byId.get('m1762848000001')?.photoUrl === '');
+  byId.get('m1762848000001')?.photo === '' && byId.get('m1762848000001')?.driveSourceUrl === '');
 
-// ---------- 2. Presedensi foto saat apply (replika applyImportData) ----------
-// processPhotoUrl dimock: sukses mengembalikan URL hasil salinan di server.
-const mockProcessPhotoUrl = async (url) => `https://server.app/photos/salinan-${encodeURIComponent(url)}`;
+// ---------- 2. Presedensi foto saat apply (replika executeImport) ----------
+// processAndDuplicatePhoto dimock: sukses mengembalikan URL salinan server.
+const mockProcess = async ({ url, memberId }) => ({
+  photo: `https://supabase.app/family-photos/members/${memberId}_full.webp`,
+  thumbnail: `https://supabase.app/family-photos/members/${memberId}_thumb.webp`,
+  driveSourceUrl: url
+});
+const mockFail = async () => { throw new Error('tautan tidak bisa diambil'); };
 
-const applyImport = async (pending, existing, mode, processFn) => {
-  const oldById = new Map(existing.map(m => [m.id.toString(), m]));
-  const processed = [];
-  const failed = [];
-  for (const m of pending) {
-    const oldPhoto = oldById.get(m.id.toString())?.photo || '';
-    let photo = mode === 'merge' ? oldPhoto : '';
-    if (m.photoUrl) {
-      try {
-        photo = await processFn(m.photoUrl);
-      } catch (err) {
-        failed.push({ name: m.name, reason: err.message });
-      }
+const candidatesOf = (rows) => rows.filter(m =>
+  m.photo && (m.photo.startsWith('http://') || m.photo.startsWith('https://') || extractGoogleDriveId(m.photo)));
+
+const executeImport = async (pending, existing, mode, processFn) => {
+  const candidates = candidatesOf(pending);
+  let processed = [...pending];
+  const failedPhotos = [];
+  for (const item of candidates) {
+    try {
+      const res = await processFn({ url: item.photo, memberId: item.id });
+      processed = processed.map(m => (m.id === item.id ? {
+        ...m, photo: res.photo, thumbnail: res.thumbnail, driveSourceUrl: res.driveSourceUrl
+      } : m));
+    } catch (err) {
+      processed = processed.map(m => (m.id === item.id ? { ...m, photo: '', driveSourceUrl: '' } : m));
+      failedPhotos.push({ name: item.name, reason: err?.message || 'gagal tak terduga' });
     }
-    const rest = { ...m };
-    delete rest.photoUrl;
-    processed.push({ ...rest, photo });
   }
   if (mode === 'merge') {
     const memberMap = new Map(existing.map(m => [m.id.toString(), m]));
-    processed.forEach(m => memberMap.set(m.id.toString(), m));
-    return { members: Array.from(memberMap.values()), failed };
+    processed.forEach(m => {
+      const prev = memberMap.get(m.id.toString());
+      memberMap.set(m.id.toString(), {
+        ...m,
+        photo: m.photo || prev?.photo || '',
+        thumbnail: m.thumbnail || prev?.thumbnail || '',
+        driveSourceUrl: m.driveSourceUrl || prev?.driveSourceUrl || ''
+      });
+    });
+    return { members: Array.from(memberMap.values()), failedPhotos };
   }
-  return { members: processed, failed };
+  return { members: processed, failedPhotos };
 };
 
 const existingMembers = [
-  { id: 'm1762848000000', name: 'Anggota Tambahan', gender: 'male', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: 'data:image/webp;base64,FOTOLAMA' },
-  { id: 'x1', name: 'Anggota Tanpa Baris', gender: 'female', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: 'data:image/webp;base64,X1' }
+  { id: 'm1762848000000', name: 'Anggota Tambahan', gender: 'male', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: 'data:image/webp;base64,FOTOLAMA', thumbnail: 'data:image/webp;base64,THUMBLAMA', driveSourceUrl: '' },
+  { id: 'x1', name: 'Anggota Tanpa Baris', gender: 'female', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: 'data:image/webp;base64,X1', thumbnail: '', driveSourceUrl: '' }
 ];
 
 const pendingRows = [
-  { id: 'm1762848000000', name: 'Anggota Tambahan', gender: 'male', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: '', photoUrl: 'https://drive.google.com/file/d/1a2B_cD-ef9/view' },
-  { id: 'm1762848000002', name: 'Anggota Tanpa Foto', gender: 'female', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: '', photoUrl: '' }
+  { id: 'm1762848000000', name: 'Anggota Tambahan', gender: 'male', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: 'https://drive.google.com/file/d/1a2B_cD-ef9/view', thumbnail: '', driveSourceUrl: 'https://drive.google.com/file/d/1a2B_cD-ef9/view' },
+  { id: 'm1762848000002', name: 'Anggota Tanpa Foto', gender: 'female', birth: '', death: '', fatherId: '', motherId: '', spouses: [], photo: '', thumbnail: '', driveSourceUrl: '' }
 ];
 
-const mergeOk = await applyImport(pendingRows, existingMembers, 'merge', mockProcessPhotoUrl);
-check('Merge: link foto baru menimpa foto lama',
-  mergeOk.members.find(m => m.id === 'm1762848000000')?.photo === 'https://server.app/photos/salinan-https%3A%2F%2Fdrive.google.com%2Ffile%2Fd%2F1a2B_cD-ef9%2Fview');
-check('Merge: kolom Foto kosong mempertahankan foto lama tidak tersentuh (anggota tanpa baris)',
+const mergeOk = await executeImport(pendingRows, existingMembers, 'merge', mockProcess);
+check('Merge: foto berhasil diduplikasi menimpa foto lama',
+  mergeOk.members.find(m => m.id === 'm1762848000000')?.photo === 'https://supabase.app/family-photos/members/m1762848000000_full.webp');
+check('Merge: anggota di luar file tidak tersentuh',
   mergeOk.members.find(m => m.id === 'x1')?.photo === 'data:image/webp;base64,X1');
-check('Merge: field photoUrl bersih setelah diterapkan',
-  mergeOk.members.every(m => !('photoUrl' in m)));
+check('Merge: anggota tanpa kolom foto mempertahankan foto lama',
+  mergeOk.members.find(m => m.id === 'm1762848000002')?.photo === '' &&
+  mergeOk.members.find(m => m.id === 'm1762848000002')?.driveSourceUrl === '');
+check('Merge: tidak ada anggota dengan 0 foto yang dipasangi foto kosong',
+  mergeOk.members.every(m => m.photo !== undefined && m.thumbnail !== undefined));
 
-const failProcess = async () => { throw new Error('tautan mati'); };
-const mergeFail = await applyImport(pendingRows, existingMembers, 'merge', failProcess);
-check('Merge: foto gagal diambil memakai foto lama + tercatat sebagai gagal',
+const mergeFail = await executeImport(pendingRows, existingMembers, 'merge', mockFail);
+check('Merge: foto gagal diduplikasi memakai foto lama + tercatat sebagai gagal',
   mergeFail.members.find(m => m.id === 'm1762848000000')?.photo === 'data:image/webp;base64,FOTOLAMA' &&
-  mergeFail.failed.length === 1 && mergeFail.failed[0].name === 'Anggota Tambahan');
+  mergeFail.failedPhotos.length === 1 && mergeFail.failedPhotos[0].name === 'Anggota Tambahan');
 
-const overwriteOk = await applyImport(pendingRows, existingMembers, 'overwrite', mockProcessPhotoUrl);
-check('Ganti total: foto hanya dari kolom Foto, foto lama tidak dipakai',
-  overwriteOk.members.find(m => m.id === 'm1762848000000')?.photo === 'https://server.app/photos/salinan-https%3A%2F%2Fdrive.google.com%2Ffile%2Fd%2F1a2B_cD-ef9%2Fview' &&
+const overwriteOk = await executeImport(pendingRows, existingMembers, 'overwrite', mockProcess);
+check('Ganti total: foto hanya hasil duplikasi kolom Foto',
+  overwriteOk.members.find(m => m.id === 'm1762848000000')?.photo === 'https://supabase.app/family-photos/members/m1762848000000_full.webp' &&
   overwriteOk.members.find(m => m.id === 'x1') === undefined);
 check('Ganti total: kolom Foto kosong berarti tanpa foto',
   overwriteOk.members.find(m => m.id === 'm1762848000002')?.photo === '');
+check('Ganti total: tautan mentah Drive tidak tersisa sebagai photo',
+  overwriteOk.members.every(m => !(m.photo || '').includes('drive.google.com')));
 
 // ---------- 3. Template masih kompatibel dengan parser ----------
 const templateRows = toSheetRows([
-  { id: '1', name: 'Budi Santoso', gender: 'male', birth: '1980-01-01', death: '', fatherId: '', motherId: '', spouses: [{ id: '2', type: 'married', marriageDate: '1998-05-20' }], photo: '' },
-  { id: '2', name: 'Siti Aminah', gender: 'female', birth: '1982-05-15', death: '', fatherId: '', motherId: '', spouses: [{ id: '1', type: 'married', marriageDate: '1998-05-20' }], photo: '' },
-  { id: '3', name: 'Andi Santoso', gender: 'male', birth: '2005-10-10', death: '', fatherId: '1', motherId: '2', spouses: [], photo: '' }
+  { id: '1', name: 'Budi Santoso', gender: 'male', birth: '1980-01-01', death: '', fatherId: '', motherId: '', spouses: [{ id: '2', type: 'married', marriageDate: '1998-05-20' }], driveSourceUrl: 'https://drive.google.com/file/d/contoh_id_foto_budi/view', photo: '' },
+  { id: '2', name: 'Siti Aminah', gender: 'female', birth: '1982-05-15', death: '', fatherId: '', motherId: '', spouses: [{ id: '1', type: 'married', marriageDate: '1998-05-20' }], driveSourceUrl: '', photo: '' },
+  { id: '3', name: 'Andi Santoso', gender: 'male', birth: '2005-10-10', death: '', fatherId: '1', motherId: '2', spouses: [], driveSourceUrl: '', photo: '' }
 ]);
-// Template asli di App.jsx punya kolom Foto kosong; samakan di sini
-templateRows.forEach(r => { r.Foto = ''; });
+templateRows[0]['Foto(URL_Drive)'] = 'https://drive.google.com/file/d/contoh_id_foto_budi/view';
 const wbTpl = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(wbTpl, XLSX.utils.json_to_sheet(templateRows), 'Template');
 const tplParsed = parseWorkbook(XLSX.write(wbTpl, { bookType: 'xlsx', type: 'binary' }));
@@ -273,21 +323,10 @@ check('Relasi keluarga template benar',
   tplParsed.find(m => m.id === '3')?.fatherId === '1' &&
   tplParsed.find(m => m.id === '3')?.motherId === '2' &&
   spouseSignature(tplParsed.find(m => m.id === '1')?.spouses) === '2:married:1998-05-20');
-check('Template: kolom Foto kosong tidak dianggap link',
-  tplParsed.every(m => m.photoUrl === ''));
-
-// Template manual dengan link Drive di kolom Foto
-const driveSheetRows = [
-  { ID: 'd1', Nama: 'Orang Drive', 'JenisKelamin(male/female)': 'male', 'Lahir(YYYY-MM-DD)': '', 'Wafat(YYYY-MM-DD)': '', ID_Ayah: '', ID_Ibu: '', 'Pasangan(ID|Status|Tanggal)': '', Foto: 'https://drive.google.com/file/d/QwErTy12/view?usp=sharing' },
-  { ID: 'd2', Nama: 'Orang Tanpa Link', 'JenisKelamin(male/female)': 'female', 'Lahir(YYYY-MM-DD)': '', 'Wafat(YYYY-MM-DD)': '', ID_Ayah: '', ID_Ibu: '', 'Pasangan(ID|Status|Tanggal)': '', Foto: 'lihat folder keluarga' }
-];
-const wbDrive = XLSX.utils.book_new();
-XLSX.utils.book_append_sheet(wbDrive, XLSX.utils.json_to_sheet(driveSheetRows), 'Drive');
-const driveParsed = parseWorkbook(XLSX.write(wbDrive, { bookType: 'xlsx', type: 'binary' }));
-check('Import file manual: link Drive terbaca sebagai photoUrl',
-  driveParsed.find(m => m.id === 'd1')?.photoUrl === 'https://drive.google.com/file/d/QwErTy12/view?usp=sharing');
-check('Import file manual: teks non-URL di kolom Foto diabaikan',
-  driveParsed.find(m => m.id === 'd2')?.photoUrl === '');
+check('Template: tautan Drive di kolom foto masuk daftar duplikasi',
+  candidatesOf(tplParsed).length === 1 && candidatesOf(tplParsed)[0].id === '1');
+check('Template: sel tanpa link tidak dianggap foto',
+  candidatesOf(tplParsed).every(m => m.photo.startsWith('http')));
 
 // ---------- 4. Kolom export cocok dengan header yang dicari parser ----------
 const exportHeaders = Object.keys(toSheetRows(appState)[0]).map(h => h.toLowerCase());

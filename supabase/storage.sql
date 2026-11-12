@@ -5,27 +5,27 @@
 -- Jalankan di Supabase Dashboard -> SQL Editor.
 
 insert into storage.buckets (id, name, public)
-values ('photos', 'photos', true)
+values ('family-photos', 'family-photos', true)
 on conflict (id) do nothing;
 
 -- Foto bisa dilihat siapa pun (pohon keluarga adalah konten publik).
-drop policy if exists "photos dapat dilihat publik" on storage.objects;
-create policy "photos dapat dilihat publik"
+drop policy if exists "family-photos dapat dilihat publik" on storage.objects;
+create policy "family-photos dapat dilihat publik"
   on storage.objects for select
-  using (bucket_id = 'photos');
+  using (bucket_id = 'family-photos');
 
 -- Hanya admin (pengguna login) yang boleh menulis dan menghapus.
-drop policy if exists "photos insert admin" on storage.objects;
-create policy "photos insert admin"
+drop policy if exists "family-photos insert admin" on storage.objects;
+create policy "family-photos insert admin"
   on storage.objects for insert to authenticated
-  with check (bucket_id = 'photos');
+  with check (bucket_id = 'family-photos');
 
-drop policy if exists "photos update admin" on storage.objects;
-create policy "photos update admin"
+drop policy if exists "family-photos update admin" on storage.objects;
+create policy "family-photos update admin"
   on storage.objects for update to authenticated
-  using (bucket_id = 'photos');
+  using (bucket_id = 'family-photos');
 
-drop policy if exists "photos delete admin" on storage.objects;
-create policy "photos delete admin"
+drop policy if exists "family-photos delete admin" on storage.objects;
+create policy "family-photos delete admin"
   on storage.objects for delete to authenticated
-  using (bucket_id = 'photos');
+  using (bucket_id = 'family-photos');

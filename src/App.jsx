@@ -211,6 +211,8 @@ const App = () => {
     total: 0,
     memberName: ''
   });
+  // Ringkasan foto yang gagal diduplikasi saat import, ditampilkan setelah proses
+  const [importFailedPhotos, setImportFailedPhotos] = useState([]);
 
   // State untuk Foto Cropper
   const [showCropModal, setShowCropModal] = useState(false);
@@ -455,6 +457,7 @@ const App = () => {
       if (previewPhotoMember) setPreviewPhotoMember(null);
       else if (showCropModal) setShowCropModal(false);
       else if (showImportConfirm) setShowImportConfirm(false);
+      else if (importFailedPhotos.length > 0) setImportFailedPhotos([]);
       else if (showResetConfirm) setShowResetConfirm(false);
       else if (deleteTarget) setDeleteTarget(null);
       else if (showKinshipModal) setShowKinshipModal(false);
@@ -462,7 +465,7 @@ const App = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [previewPhotoMember, showCropModal, showImportConfirm, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
+  }, [previewPhotoMember, showCropModal, showImportConfirm, importFailedPhotos, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
@@ -1600,6 +1603,7 @@ const App = () => {
         total: candidates.length,
         memberName: candidates[0].name
       });
+      const failedPhotos = [];
 
       for (let i = 0; i < candidates.length; i++) {
         const item = candidates[i];
@@ -1617,20 +1621,24 @@ const App = () => {
             supabaseClient: supabase
           });
 
-          if (res) {
-            processed = processed.map(m => (m.id === item.id ? {
-              ...m,
-              photo: res.photo,
-              thumbnail: res.thumbnail,
-              driveSourceUrl: res.driveSourceUrl
-            } : m));
-          }
+          processed = processed.map(m => (m.id === item.id ? {
+            ...m,
+            photo: res.photo,
+            thumbnail: res.thumbnail,
+            driveSourceUrl: res.driveSourceUrl
+          } : m));
         } catch (err) {
           console.warn(`Gagal memproses foto ${item.name}:`, err);
+          // Buang tautan mentah agar tidak dipakai sebagai foto: mode gabung
+          // memakai foto lama, mode ganti total membiarkan kosong
+          processed = processed.map(m => (m.id === item.id ? { ...m, photo: '', driveSourceUrl: '' } : m));
+          // Data anggota tetap masuk; kegagalannya dilaporkan di ringkasan akhir
+          failedPhotos.push({ name: item.name, reason: err?.message || 'gagal tak terduga' });
         }
       }
 
       setImportProgress({ active: false, current: 0, total: 0, memberName: '' });
+      setImportFailedPhotos(failedPhotos);
     }
 
     if (mode === 'merge') {
@@ -2656,8 +2664,30 @@ const App = () => {
               />
             </div>
             <div style={{ marginTop: '12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Mengompresi WebP 2-tier (Thumbnail & HD)...
+              Mengompresi WebP 2-tier (Thumbnail &amp; HD)...
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ringkasan Foto Gagal */}
+      {importFailedPhotos.length > 0 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 2500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div className="glass" role="alertdialog" aria-label="Ringkasan foto yang gagal" style={{ width: '100%', maxWidth: '460px', padding: '24px', background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: '14px', boxShadow: 'var(--shadow-modal)' }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: '1.15rem' }}>Beberapa foto gagal diduplikasi</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4 }}>
+              Data anggota tetap dimasukkan, hanya fotonya yang tidak terpasang. Mode gabung memakai foto lama bila tersedia.
+            </p>
+            <div style={{ background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: '8px', padding: '10px 12px', maxHeight: '180px', overflowY: 'auto', marginBottom: '16px' }}>
+              {importFailedPhotos.map((f, i) => (
+                <div key={i} style={{ fontSize: '0.8rem', color: 'var(--danger)', padding: '3px 0' }}>
+                  {f.name}: {f.reason}
+                </div>
+              ))}
+            </div>
+            <button className="btn btn-primary" style={{ width: '100%', padding: '12px', justifyContent: 'center' }} onClick={() => setImportFailedPhotos([])}>
+              Tutup
+            </button>
           </div>
         </div>
       )}

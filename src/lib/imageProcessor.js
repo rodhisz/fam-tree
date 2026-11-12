@@ -153,13 +153,14 @@ export async function generateAvatarTiers(img) {
  */
 export async function uploadTieredPhotos({ memberId, hdBlob, thumbBlob, supabaseClient }) {
   const safeId = (memberId || `temp_${Date.now()}`).toString().replace(/[^a-zA-Z0-9_-]/g, '_');
-  const timestamp = Date.now();
 
   if (supabaseClient) {
     try {
       const bucketName = 'family-photos';
-      const fullPath = `members/${safeId}_${timestamp}_full.webp`;
-      const thumbPath = `members/${safeId}_${timestamp}_thumb.webp`;
+      // Path per anggota tanpa penanda waktu: upsert menimpa berkas yang sama,
+      // jadi import ulang atau ganti foto tidak membuat storage membengkak
+      const fullPath = `members/${safeId}_full.webp`;
+      const thumbPath = `members/${safeId}_thumb.webp`;
 
       // Upload Full HD
       const { error: fullErr } = await supabaseClient.storage
@@ -203,30 +204,61 @@ export async function uploadTieredPhotos({ memberId, hdBlob, thumbBlob, supabase
 }
 
 /**
+ * Fallback pengambilan foto lewat edge function proxy (supabase/functions/fetch-photo)
+ * ketika load langsung gagal, misalnya diblokir CORS atau timeout.
+ * Mengembalikan ImageBitmap yang siap digambar ke canvas.
+ */
+async function fetchPhotoViaProxy(directUrl) {
+  const env = import.meta.env || {};
+  if (!env.VITE_SUPABASE_URL) {
+    throw new Error('gagal memuat gambar dari tautan (tidak ada proxy tersedia)');
+  }
+  const res = await fetch(`${env.VITE_SUPABASE_URL}/functions/v1/fetch-photo`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.VITE_SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ url: directUrl })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || `proxy gagal (HTTP ${res.status})`);
+  }
+  const contentType = (res.headers.get('content-type') || '').toLowerCase().split(';')[0];
+  if (!contentType.startsWith('image/')) {
+    throw new Error('tautan tidak mengembalikan gambar');
+  }
+  const blob = await res.blob();
+  return createImageBitmap(blob);
+}
+
+/**
  * Memproses satu URL foto (Google Drive atau URL langsung),
  * mengunduh, mengompres 2-tier, dan mengunggah ke storage.
+ * Melempar Error dengan pesan yang bisa ditampilkan ke pengguna bila gagal.
  */
 export async function processAndDuplicatePhoto({ url, memberId, supabaseClient }) {
   const directUrl = resolveImageUrl(url);
-  if (!directUrl) return null;
+  if (!directUrl) throw new Error('tautan tidak valid');
 
+  let source = null;
   try {
-    const img = await loadImage(directUrl);
-    const { hdBlob, thumbBlob } = await generateAvatarTiers(img);
-    const result = await uploadTieredPhotos({
-      memberId,
-      hdBlob,
-      thumbBlob,
-      supabaseClient
-    });
-
-    return {
-      photo: result.photo,
-      thumbnail: result.thumbnail,
-      driveSourceUrl: url
-    };
-  } catch (err) {
-    console.warn(`Gagal memproses foto untuk ${memberId} dari ${url}:`, err);
-    return null;
+    source = await loadImage(directUrl);
+  } catch (loadErr) {
+    if (!supabaseClient) {
+      console.warn(`Gagal memproses foto untuk ${memberId} dari ${url}:`, loadErr);
+      throw new Error('gagal memuat gambar dari tautan');
+    }
+    source = await fetchPhotoViaProxy(directUrl);
   }
+
+  const { hdBlob, thumbBlob } = await generateAvatarTiers(source);
+  const result = await uploadTieredPhotos({ memberId, hdBlob, thumbBlob, supabaseClient });
+
+  return {
+    photo: result.photo,
+    thumbnail: result.thumbnail,
+    driveSourceUrl: url
+  };
 }
