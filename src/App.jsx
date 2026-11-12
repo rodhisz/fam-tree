@@ -14,6 +14,7 @@ import dagre from 'dagre';
 import FamilyMemberNode from './components/CustomNode';
 import { familyData as initialData } from './data/familyData';
 import { supabase } from './lib/supabase';
+import { processPhotoUrl } from './lib/photo';
 import {
   Plus, Users, User, Table as TableIcon, Trees,
   Trash2, Edit2, Save, X, Camera, Heart, Sun, Moon, Search,
@@ -218,6 +219,10 @@ const App = () => {
   // State untuk Import Modal
   const [importPendingData, setImportPendingData] = useState([]);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
+  // Pemrosesan foto saat import: progres per anggota dan daftar foto yang gagal
+  const [importProcessing, setImportProcessing] = useState(false);
+  const [importProgress, setImportProgress] = useState(null);
+  const importCancelRef = useRef(false);
 
   // State untuk Foto Cropper
   const [showCropModal, setShowCropModal] = useState(false);
@@ -451,12 +456,24 @@ const App = () => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  // Tutup modal import. Jika pemrosesan foto sedang berjalan, beri tanda agar
+  // dihentikan dan data tidak diterapkan; jika tidak, bersihkan state modal.
+  const closeImportModal = useCallback(() => {
+    if (importProcessing) {
+      importCancelRef.current = true;
+    } else {
+      setImportProgress(null);
+      setImportPendingData([]);
+    }
+    setShowImportConfirm(false);
+  }, [importProcessing]);
+
   // Tutup modal aktif dengan Escape (aksesibilitas keyboard)
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       if (showCropModal) setShowCropModal(false);
-      else if (showImportConfirm) setShowImportConfirm(false);
+      else if (showImportConfirm) closeImportModal();
       else if (showResetConfirm) setShowResetConfirm(false);
       else if (deleteTarget) setDeleteTarget(null);
       else if (showKinshipModal) setShowKinshipModal(false);
@@ -464,7 +481,7 @@ const App = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showCropModal, showImportConfirm, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
+  }, [showCropModal, showImportConfirm, closeImportModal, showResetConfirm, deleteTarget, showKinshipModal, editingId]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
@@ -1262,7 +1279,10 @@ const App = () => {
         'Wafat(YYYY-MM-DD)': m.death || '',
         ID_Ayah: m.fatherId || '',
         ID_Ibu: m.motherId || '',
-        'Pasangan(ID|Status|Tanggal)': m.spouses?.map(s => `${s.id}|${s.type}|${s.marriageDate || ''}`).join(', ') || ''
+        'Pasangan(ID|Status|Tanggal)': m.spouses?.map(s => `${s.id}|${s.type}|${s.marriageDate || ''}`).join(', ') || '',
+        // Hanya URL http(s) yang ditulis; foto hasil crop (data URL) terlalu
+        // panjang untuk sel Excel dan sudah tersimpan di server
+        Foto: (typeof m.photo === 'string' && /^https?:\/\//i.test(m.photo)) ? m.photo : ''
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -1371,7 +1391,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': '2|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '2|married|1998-05-20',
+            Foto: ''
         },
         {
             ID: '2',
@@ -1381,7 +1402,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '',
             ID_Ibu: '',
-            'Pasangan(ID|Status|Tanggal)': '1|married|1998-05-20'
+            'Pasangan(ID|Status|Tanggal)': '1|married|1998-05-20',
+            Foto: ''
         },
         {
             ID: '3',
@@ -1391,7 +1413,8 @@ const App = () => {
             'Wafat(YYYY-MM-DD)': '',
             ID_Ayah: '1',
             ID_Ibu: '2',
-            'Pasangan(ID|Status|Tanggal)': ''
+            'Pasangan(ID|Status|Tanggal)': '',
+            Foto: ''
         }
     ];
     const ws = XLSX.utils.json_to_sheet(data);
@@ -1464,7 +1487,8 @@ const App = () => {
             wafat: headers.findIndex(h => h.includes('wafat') || h === 'death'),
             ayah: headers.findIndex(h => h.includes('ayah') || h === 'father'),
             ibu: headers.findIndex(h => h.includes('ibu') || h === 'mother'),
-            pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse')
+            pasangan: headers.findIndex(h => h.includes('pasangan') || h === 'spouse'),
+            foto: headers.findIndex(h => h.includes('foto') || h.includes('photo'))
         };
 
         const newData = dataRows.map((row, rowIdx) => {
@@ -1497,6 +1521,11 @@ const App = () => {
                 };
             }).filter(s => s.id) : [];
 
+            // Kolom Foto berisi link foto per orang (mis. link Google Drive).
+            // Disimpan sementara di photoUrl, lalu diduplikasi ke server saat
+            // import dikonfirmasi; hanya URL http(s) yang diterima.
+            const fotoRaw = getStr(idx.foto);
+
             return {
                 id,
                 name,
@@ -1506,7 +1535,8 @@ const App = () => {
                 fatherId,
                 motherId,
                 spouses: spousesArray,
-                photo: ''
+                photo: '',
+                photoUrl: /^https?:\/\//i.test(fotoRaw) ? fotoRaw : ''
             };
         }).filter(m => m !== null && m.name !== 'Unknown');
 
@@ -1530,25 +1560,64 @@ const App = () => {
     e.target.value = null; // reset
   };
 
-  const handleImportMerge = () => {
-    setFamilyMembers(prev => {
-        const memberMap = new Map();
-        prev.forEach(m => memberMap.set(m.id.toString(), m));
-        importPendingData.forEach(m => {
-            const existing = memberMap.get(m.id.toString());
-            // Foto tidak terbawa di file Excel: pertahankan foto yang sudah ada untuk ID yang sama
-            memberMap.set(m.id.toString(), (existing && !m.photo) ? { ...m, photo: existing.photo } : m);
-        });
-        return Array.from(memberMap.values());
-    });
-    setShowImportConfirm(false);
-    setImportPendingData([]);
-  };
+  // Proses foto dari kolom Foto satu per satu (unduh, kompres, simpan ke
+  // server), lalu terapkan hasil import ke data keluarga. Presedensi foto:
+  // link baru di file > foto lama (mode gabung) > kosong.
+  const applyImportData = async (mode) => {
+    if (importProcessing) return;
+    importCancelRef.current = false;
+    setImportProcessing(true);
+    const failed = [];
+    setImportProgress({ done: 0, total: importPendingData.length, failed: [] });
 
-  const handleImportOverwrite = () => {
-    setFamilyMembers(importPendingData);
-    setShowImportConfirm(false);
+    const oldById = new Map(familyMembers.map(m => [m.id.toString(), m]));
+    const processed = [];
+
+    for (let i = 0; i < importPendingData.length; i++) {
+      if (importCancelRef.current) break;
+      const m = importPendingData[i];
+      const oldPhoto = oldById.get(m.id.toString())?.photo || '';
+      let photo = mode === 'merge' ? oldPhoto : '';
+
+      if (m.photoUrl) {
+        try {
+          photo = await processPhotoUrl(m.photoUrl, m.id, supabase);
+        } catch (err) {
+          // Foto gagal diambil: catat, pakai foto lama (mode gabung) atau kosong
+          failed.push({ name: m.name, reason: err.message });
+        }
+      }
+
+      const rest = { ...m };
+      delete rest.photoUrl;
+      processed.push({ ...rest, photo });
+      setImportProgress({ done: i + 1, total: importPendingData.length, failed: [...failed] });
+    }
+
+    setImportProcessing(false);
+
+    // Dibatalkan di tengah jalan: jangan ubah data apa pun
+    if (importCancelRef.current) {
+      setImportProgress(null);
+      setImportPendingData([]);
+      return;
+    }
+
+    if (mode === 'merge') {
+      const memberMap = new Map(familyMembers.map(m => [m.id.toString(), m]));
+      processed.forEach(m => memberMap.set(m.id.toString(), m));
+      setFamilyMembers(Array.from(memberMap.values()));
+    } else {
+      setFamilyMembers(processed);
+    }
     setImportPendingData([]);
+
+    // Bila ada foto yang gagal, data tetap diterapkan dan ringkasannya
+    // ditampilkan di modal; bila semua lancar, langsung tutup.
+    if (failed.length === 0) {
+      setShowImportConfirm(false);
+      setImportProgress(null);
+    }
   };
 
   const handleAppLogoUpload = (e) => {
@@ -1812,7 +1881,7 @@ const App = () => {
                   <div style={{ background: 'var(--bg-inset)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-card)' }}>
                       <h3 style={{ marginBottom: '10px', fontSize: '1.1rem' }}>Import Data Keluarga (Excel .xlsx)</h3>
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '15px' }}>
-                        Unggah file berektensi .xlsx untuk memasukkan banyak data sekaligus. File hasil tombol Export ke Excel di bawah dapat diimpor kembali tanpa kehilangan relasi. Format kolom pasangan: Pasangan(ID|Status|Tanggal).
+                        Unggah file berektensi .xlsx untuk memasukkan banyak data sekaligus. File hasil tombol Export ke Excel di bawah dapat diimpor kembali tanpa kehilangan relasi. Format kolom pasangan: Pasangan(ID|Status|Tanggal). Kolom Foto berisi link foto per orang, termasuk link Google Drive; salinannya disimpan di server aplikasi saat data diimpor.
                       </p>
                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
                      <button className="btn glass" onClick={handleDownloadTemplate}>
@@ -2371,36 +2440,83 @@ const App = () => {
               <Upload size={30} />
             </div>
             <h3 style={{ marginBottom: '10px', fontSize: '1.25rem' }}>Konfirmasi Impor Data</h3>
-            <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-              Berhasil memproses <strong>{importPendingData.length}</strong> anggota keluarga dari file Excel. Pilih bagaimana Anda ingin memasukkan data ini:
-            </p>
-            <p style={{ fontSize: '0.8rem', marginBottom: '20px', color: 'var(--text-muted)' }}>
-              Foto tidak tersimpan di file Excel. Mode gabung mempertahankan foto yang sudah ada untuk ID yang sama; mode ganti total menghapusnya.
-            </p>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button 
-                className="btn btn-primary" 
-                style={{ width: '100%', padding: '12px', justifyContent: 'center' }} 
-                onClick={handleImportMerge}
-              >
-                Gabungkan dengan Data Lama
-              </button>
-              <button 
-                className="btn glass" 
-                style={{ width: '100%', padding: '12px', justifyContent: 'center', color: 'var(--danger)' }} 
-                onClick={handleImportOverwrite}
-              >
-                Ganti Total (Hapus Data Lama)
-              </button>
-              <button 
-                className="btn glass" 
-                style={{ width: '100%', padding: '12px', justifyContent: 'center', marginTop: '5px' }} 
-                onClick={() => { setShowImportConfirm(false); setImportPendingData([]); }}
-              >
-                Batalkan Impor
-              </button>
-            </div>
+
+            {importProcessing ? (
+              <>
+                <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Mengambil dan menyimpan foto ({importProgress?.done || 0} dari {importProgress?.total || 0} anggota). Foto disalin ke server aplikasi agar tidak bergantung pada tautan aslinya.
+                </p>
+                <div
+                  role="progressbar"
+                  aria-valuenow={importProgress?.done || 0}
+                  aria-valuemin={0}
+                  aria-valuemax={importProgress?.total || 0}
+                  aria-label="Progres pemrosesan foto"
+                  style={{ height: '8px', background: 'var(--bg-inset)', borderRadius: '4px', overflow: 'hidden', marginBottom: '20px' }}
+                >
+                  <div style={{ width: `${importProgress?.total ? Math.round((importProgress.done / importProgress.total) * 100) : 0}%`, height: '100%', background: 'var(--primary)', transition: 'width 0.2s' }} />
+                </div>
+                <button
+                  className="btn glass"
+                  style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
+                  onClick={closeImportModal}
+                >
+                  Batalkan Pemrosesan
+                </button>
+              </>
+            ) : importProgress && importProgress.failed.length > 0 ? (
+              <>
+                <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Data berhasil dimasukkan. Namun <strong>{importProgress.failed.length}</strong> dari {importProgress.total} foto tidak bisa diambil dari tautannya; anggota tersebut tetap masuk tanpa foto baru.
+                </p>
+                <div style={{ textAlign: 'left', background: 'var(--danger-soft)', border: '1px solid var(--danger-border)', borderRadius: '8px', padding: '12px', marginBottom: '20px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {importProgress.failed.map((f, i) => (
+                    <div key={i} style={{ fontSize: '0.8rem', color: 'var(--danger)', padding: '3px 0' }}>
+                      {f.name}: {f.reason}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '12px', justifyContent: 'center' }}
+                  onClick={closeImportModal}
+                >
+                  Selesai
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '0.9rem', marginBottom: '15px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Berhasil memproses <strong>{importPendingData.length}</strong> anggota keluarga dari file Excel. Pilih bagaimana Anda ingin memasukkan data ini:
+                </p>
+                <p style={{ fontSize: '0.8rem', marginBottom: '20px', color: 'var(--text-muted)' }}>
+                  Kolom Foto berisi link foto per orang, termasuk link Google Drive. Saat dikonfirmasi, foto diunduh, dikompres, dan disimpan sebagai salinan di server aplikasi, jadi tautan aslinya boleh hilang. Mode gabung memakai foto lama bila kolomnya kosong; mode ganti total mengosongkannya.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <button 
+                    className="btn btn-primary" 
+                    style={{ width: '100%', padding: '12px', justifyContent: 'center' }} 
+                    onClick={() => applyImportData('merge')}
+                  >
+                    Gabungkan dengan Data Lama
+                  </button>
+                  <button 
+                    className="btn glass" 
+                    style={{ width: '100%', padding: '12px', justifyContent: 'center', color: 'var(--danger)' }} 
+                    onClick={() => applyImportData('overwrite')}
+                  >
+                    Ganti Total (Hapus Data Lama)
+                  </button>
+                  <button 
+                    className="btn glass" 
+                    style={{ width: '100%', padding: '12px', justifyContent: 'center', marginTop: '5px' }} 
+                    onClick={closeImportModal}
+                  >
+                    Batalkan Impor
+                  </button>
+                </div>
+              </>
+            )}
           </motion.div>
         </div>
       )}
